@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+:root {
+  --bg-0: #0d1210;
+  --bg-1: #121815;
+  --bg-2: #171f1b;
+  --line: #27332c;
+  --line-soft: #1c2420;
+  --text-0: #e9eee9;
+  --text-1: #a9b8af;
+  --text-2: #6c7d72;
+
+  --accent-amber: #d8a34f;
+  --accent-blue: #6f9ac9;
+  --accent-green: #7cb088;
+  --accent-red: #d9695d;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-amber);
+  color: #16140c;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+}
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  color: var(--text-0);
+  border-radius: 3px;
+  padding: 8px 10px;
+  outline: none;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent-amber);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-0);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 5px;
+}
+
+.nav-link {
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.nav-link:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.nav-link.active {
+  color: var(--accent-amber);
+  border-left-color: var(--accent-amber);
+  background: var(--bg-2);
+}
+
+.btn {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--text-0);
+  border-radius: 3px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.btn:hover {
+  border-color: var(--text-2);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+  color: #16140c;
+}
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.panel {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.row-hover:hover {
+  background: var(--bg-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

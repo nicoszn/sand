@@ -1,0 +1,102 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { api } from "@/lib/api";
+
+export default function NewTaskPage() {
+  const router = useRouter();
+  const [goal, setGoal] = useState("");
+  const [maxSteps, setMaxSteps] = useState(12);
+  const [useSchema, setUseSchema] = useState(false);
+  const [schemaText, setSchemaText] = useState('{\n  "type": "object",\n  "properties": {\n    "answer": { "type": "string" }\n  }\n}');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setError(null);
+    if (!goal.trim()) {
+      setError("Describe what the agent should do.");
+      return;
+    }
+    let schema: object | null = null;
+    if (useSchema) {
+      try {
+        schema = JSON.parse(schemaText);
+      } catch {
+        setError("JSON schema isn't valid JSON.");
+        return;
+      }
+    }
+    setSubmitting(true);
+    try {
+      const res = await api.createTask(goal.trim(), maxSteps, schema);
+      router.push(`/tasks/${res.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create task");
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: "28px 36px", maxWidth: 640 }}>
+      <h1 style={{ fontSize: 16, fontWeight: 400, color: "var(--text-0)", margin: "0 0 20px" }}>new task</h1>
+
+      <label style={{ display: "block", fontSize: 12, color: "var(--text-1)", marginBottom: 6 }}>goal</label>
+      <textarea
+        value={goal}
+        onChange={(e) => setGoal(e.target.value)}
+        placeholder="e.g. Find the current price of the top 3 cryptocurrencies and compute their combined market cap."
+        rows={5}
+        style={{ width: "100%", resize: "vertical", marginBottom: 18 }}
+      />
+
+      <div style={{ display: "flex", gap: 24, marginBottom: 18 }}>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: "var(--text-1)", marginBottom: 6 }}>
+            max steps
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={25}
+            value={maxSteps}
+            onChange={(e) => setMaxSteps(Number(e.target.value))}
+            style={{ width: 100 }}
+          />
+          <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>hard cap is set in settings</div>
+        </div>
+      </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--text-1)", marginBottom: 10, cursor: "pointer" }}>
+        <input
+          type="checkbox"
+          checked={useSchema}
+          onChange={(e) => setUseSchema(e.target.checked)}
+          style={{ width: "auto" }}
+        />
+        require the final answer to match a JSON schema
+      </label>
+
+      {useSchema && (
+        <textarea
+          value={schemaText}
+          onChange={(e) => setSchemaText(e.target.value)}
+          rows={8}
+          style={{ width: "100%", marginBottom: 18, fontSize: 12.5 }}
+        />
+      )}
+
+      {error && (
+        <div style={{ color: "var(--accent-red)", fontSize: 12.5, marginBottom: 14 }}>{error}</div>
+      )}
+
+      <button className="btn btn-primary" disabled={submitting} onClick={submit}>
+        {submitting ? "starting..." : "run task"}
+      </button>
+      <div style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 10 }}>
+        Runs in the background on the server — you can close this tab and come back to it from the task list.
+      </div>
+    </div>
+  );
+}
