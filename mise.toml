@@ -1,0 +1,8 @@
+# Railpack is built on Mise; this is Railpack's own recommended way to pin
+# tool versions and add a second runtime alongside the auto-detected one
+# (see https://railpack.com/config/recommendations). Node runs the Next.js
+# server itself; Python is only needed as the sandboxed execution target
+# for the run_python tool (lib/server/tools.ts shells out to `python3`).
+[tools]
+node = "22"
+python = "3.12"

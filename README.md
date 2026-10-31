@@ -75,10 +75,15 @@ production-mode run (what Railway actually runs).
 One service this time:
 
 1. New service → deploy from this repo.
-2. Railway reads `railpack.json` at the repo root: it pins Node 22 and adds
-   Python 3.12 via Railpack's package manager (mise) so `run_python` has a
-   real interpreter, plus `build-essential` so `better-sqlite3`'s native
-   module compiles during the build.
+2. Railway reads two config files at the repo root:
+   - `mise.toml` pins Node 22 and adds Python 3.12 as a second runtime
+     (Railpack is built on [Mise](https://mise.jdx.dev/); this is Railpack's
+     own documented way to add a language alongside the auto-detected one -
+     see [railpack.com/config/recommendations](https://railpack.com/config/recommendations)).
+     Python is only needed as the sandboxed execution target for the
+     `run_python` tool, not for anything in the app's own runtime.
+   - `railpack.json` adds `build-essential` (so `better-sqlite3`'s native
+     module compiles during the build) and sets the start command.
 3. No environment variables are required to boot. Railway sets `PORT`
    automatically; `npm run start` reads it.
 4. Add your OpenRouter key(s) from the deployed UI's Keys page — stored in
