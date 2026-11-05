@@ -13,6 +13,7 @@ export interface Task {
   completion_tokens: number;
   step_count: number;
   resume_count: number;
+  has_conversation: 0 | 1;
 }
 
 export interface TaskDocumentMeta {

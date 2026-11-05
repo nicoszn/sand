@@ -15,14 +15,15 @@ const CreateTaskSchema = z.object({
 });
 
 const LIST_COLUMNS =
-  "id, goal, status, result, schema_json, max_steps, created_at, updated_at, prompt_tokens, completion_tokens, step_count, resume_count";
+  "id, goal, status, result, schema_json, max_steps, created_at, updated_at, prompt_tokens, completion_tokens, step_count, resume_count, (conversation_json IS NOT NULL) AS has_conversation";
 
 export async function GET() {
-  // conversation_json is excluded here - it can be large and the list view
-  // doesn't need it; it's read directly from the DB when resuming.
+  // conversation_json itself is excluded - it can be large and the list
+  // view doesn't need the content, just whether one exists (has_conversation)
+  // so the UI knows whether a "resume" action is possible.
   const rows = getDb()
     .prepare(`SELECT ${LIST_COLUMNS} FROM tasks ORDER BY created_at DESC LIMIT 100`)
-    .all() as Omit<TaskRow, "conversation_json">[];
+    .all() as (Omit<TaskRow, "conversation_json"> & { has_conversation: 0 | 1 })[];
   return NextResponse.json(rows);
 }
 

@@ -28,8 +28,4 @@ export const config = {
   /** OpenRouter chat completions endpoint. Overridable for testing against
    * a mock, or if OpenRouter ever changes their API base. */
   openrouterApiUrl: process.env.OPENROUTER_API_URL ?? "https://openrouter.ai/api/v1/chat/completions",
-
-  /** How many times a task auto-resumes after being interrupted by a
-   * server restart before it's given up on and marked permanently failed. */
-  maxTaskResumes: readInt("MAX_TASK_RESUMES", 3),
 } as const;

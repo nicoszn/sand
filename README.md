@@ -38,7 +38,6 @@ nothing required to boot - every value has a default:
 | `PORT` | `3000` | set automatically by Railway |
 | `DATA_DIR` | `data` | where the SQLite file lives |
 | `OPENROUTER_API_URL` | OpenRouter's real endpoint | override for testing |
-| `MAX_TASK_RESUMES` | `3` | see "Surviving a restart" below |
 
 ## Attaching documents to a task
 
@@ -59,22 +58,24 @@ off mid-task by a redeploy, crash, or OOM. The old behavior just marked it
 - Every step persists the full message history to the task's
   `conversation_json` column, not just the human-readable log.
 - On boot, `instrumentation.ts` → `initTaskRunner()` finds any `running`
-  task, marks it `interrupted`, and **resumes it from the saved
-  conversation** - same step count, same context, picking up with the next
-  model call, not starting over.
-- This repeats automatically up to `MAX_TASK_RESUMES` (default 3)
-  consecutive restarts. A task that keeps crashing the whole server past
-  that point is marked `failed` with an explicit message, rather than
-  retried forever.
-- Even after that, the saved conversation isn't discarded: `POST
-  /api/tasks/[id]/resume` (a "resume" button in the UI) manually resumes
-  it from the exact same point, any time.
+  task and marks it **`interrupted`** - and stops there. Nothing resumes
+  automatically. Silently continuing a task after a restart, with no one
+  having asked for that, isn't something this app does without consent.
+- An interrupted task shows up on the **tasks list** with its own banner
+  ("N tasks were interrupted... waiting on you") and inline **resume** /
+  **cancel** buttons right on the row - no need to click into it. The same
+  two actions are on the task detail page too.
+- **Resume** (`POST /api/tasks/[id]/resume`) continues from the exact
+  saved conversation and step count - picks up with the next model call,
+  doesn't restart from scratch. **Cancel** stops it for good.
+- `resume_count` is purely informational (shown as "interrupted 2x"); it
+  doesn't trigger or limit anything automatically.
 
-This was verified by seeding a task mid-run with a fake saved conversation
-and confirming: (1) it resumes from the correct step with the exact
-message history after a simulated restart, (2) it gives up cleanly at the
-resume cap instead of looping forever, and (3) manual resume still works
-afterward.
+Verified by seeding a task mid-run with a fake saved conversation: after a
+simulated restart it sat as `interrupted` with zero activity for 5+
+seconds (confirmed nothing auto-fires), then both manual resume (continues
+from the saved step/conversation) and manual cancel were exercised
+successfully against it.
 
 ## How a task runs
 

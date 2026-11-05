@@ -39,7 +39,10 @@ export default function TaskDetailPage() {
   // Live updates: SSE while the task is active, with a polling fallback.
   useEffect(() => {
     if (!task) return;
-    if (["completed", "failed", "cancelled"].includes(task.status)) return;
+    // Nothing will change for these without a person taking an action
+    // (resume/cancel), which already refetches the task - no need for a
+    // live connection sitting open.
+    if (["completed", "failed", "cancelled", "interrupted"].includes(task.status)) return;
 
     const es = new EventSource(`/api/tasks/${taskId}/stream`);
     let fellBack = false;
@@ -108,7 +111,8 @@ export default function TaskDetailPage() {
   }
 
   const active = task.status === "queued" || task.status === "running";
-  const canResume = task.status === "interrupted" || (task.status === "failed" && task.resume_count > 0);
+  const cancellable = active || task.status === "interrupted";
+  const canResume = (task.status === "interrupted" || task.status === "failed") && !!task.has_conversation;
 
   return (
     <div style={{ padding: "28px 36px", maxWidth: 820 }}>
@@ -117,7 +121,7 @@ export default function TaskDetailPage() {
           <h1 style={{ fontSize: 15, fontWeight: 400, color: "var(--text-0)", margin: 0, lineHeight: 1.5 }}>
             {task.goal}
           </h1>
-          {active && (
+          {cancellable && (
             <button className="btn" onClick={cancel} style={{ flexShrink: 0 }}>
               cancel
             </button>
@@ -144,8 +148,9 @@ export default function TaskDetailPage() {
 
       {task.status === "interrupted" && (
         <div className="panel" style={{ padding: 14, marginBottom: 18, borderColor: "var(--accent-blue)", color: "var(--text-1)", fontSize: 12.5 }}>
-          This task was interrupted by a server restart and will resume automatically. If it doesn&apos;t, use the resume
-          button above.
+          This task was interrupted by a server restart partway through. Its progress is saved - choose{" "}
+          <strong style={{ color: "var(--text-0)" }}>resume</strong> to continue from where it left off, or{" "}
+          <strong style={{ color: "var(--text-0)" }}>cancel</strong> to stop it for good.
         </div>
       )}
 

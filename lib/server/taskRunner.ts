@@ -8,16 +8,15 @@
  * Restart handling: a task stuck in "running" when the process starts was
  * interrupted (redeploy, crash, OOM) mid-task, not failed. Its full message
  * history was persisted after every step (see agent.ts persistConversation),
- * so instead of discarding it, this module resumes it from exactly where it
- * left off - same conversation, same step count, picking back up with the
- * next model call. A task is only given up on (marked "failed") after
- * MAX_RESUMES consecutive restarts, so a task that's crash-looping the
- * whole server doesn't retry forever.
+ * so it's marked "interrupted" (not "failed") and left exactly as it was -
+ * nothing resumes it automatically. A person decides, from the UI, whether
+ * to resume it (continues from the saved conversation) or cancel it. This
+ * is a deliberate choice: silently continuing a task after a restart, with
+ * no one having asked for that, isn't something to do without consent.
  */
 import { getDb } from "./db";
 import { runTask, ResumeState } from "./agent";
 import { ChatMessage } from "./openrouterClient";
-import { config } from "@/lib/config";
 
 interface TaskSpec {
   goal: string;
@@ -121,16 +120,6 @@ export function resumeTask(taskId: string): { ok: true } | { ok: false; error: s
   return { ok: true };
 }
 
-interface InterruptedRow {
-  id: string;
-  goal: string;
-  max_steps: number;
-  schema_json: string | null;
-  conversation_json: string | null;
-  step_count: number;
-  resume_count: number;
-}
-
 /** Call once at server startup (see instrumentation.ts). */
 export function initTaskRunner() {
   const s = state();
@@ -139,36 +128,19 @@ export function initTaskRunner() {
 
   const db = getDb();
 
-  const interrupted = db
-    .prepare(
-      "SELECT id, goal, max_steps, schema_json, conversation_json, step_count, resume_count FROM tasks WHERE status = 'running'"
-    )
-    .all() as InterruptedRow[];
-
+  // Tasks stuck "running" were cut off mid-task by this restart. Mark them
+  // "interrupted" and stop there - no auto-resume. They keep their saved
+  // conversation (conversation_json) so a person can resume or cancel them
+  // from the UI whenever they choose; resume_count is just a counter shown
+  // in the UI ("interrupted 2x"), it doesn't trigger anything by itself.
+  const interrupted = db.prepare("SELECT id FROM tasks WHERE status = 'running'").all() as { id: string }[];
   for (const row of interrupted) {
-    if (row.resume_count >= config.maxTaskResumes) {
-      db.prepare("UPDATE tasks SET status = 'failed', result = ? WHERE id = ?").run(
-        `Stopped: interrupted by a server restart ${config.maxTaskResumes} times in a row - giving up on automatic resume. Use the resume button to try again manually.`,
-        row.id
-      );
-      continue;
-    }
-
     db.prepare("UPDATE tasks SET status = 'interrupted', resume_count = resume_count + 1 WHERE id = ?").run(row.id);
-
-    const jsonSchema = row.schema_json ? JSON.parse(row.schema_json) : null;
-    if (row.conversation_json) {
-      // Had made at least one model call before the restart - resume from there.
-      const messages = JSON.parse(row.conversation_json) as ChatMessage[];
-      db.prepare("UPDATE tasks SET status = 'queued' WHERE id = ?").run(row.id);
-      enqueueTask(row.id, row.goal, row.max_steps, jsonSchema, { messages, fromStep: row.step_count });
-    } else {
-      // Interrupted before the first model response - nothing to resume, just restart it.
-      db.prepare("UPDATE tasks SET status = 'queued' WHERE id = ?").run(row.id);
-      enqueueTask(row.id, row.goal, row.max_steps, jsonSchema);
-    }
   }
 
+  // Tasks left "queued" never got a chance to start - there's no partial
+  // state or consent question here, so these resume processing normally;
+  // that's just the queue doing its job, not "resuming" a task.
   const queued = db.prepare("SELECT id, goal, max_steps, schema_json FROM tasks WHERE status = 'queued'").all() as {
     id: string;
     goal: string;
@@ -176,7 +148,6 @@ export function initTaskRunner() {
     schema_json: string | null;
   }[];
   for (const row of queued) {
-    if (interrupted.some((r) => r.id === row.id)) continue; // already enqueued above
     enqueueTask(row.id, row.goal, row.max_steps, row.schema_json ? JSON.parse(row.schema_json) : null);
   }
 }

@@ -4,12 +4,14 @@ import { getDocuments } from "@/lib/server/documents";
 import { StepRow, TaskRow } from "@/lib/server/types";
 
 const COLUMNS =
-  "id, goal, status, result, schema_json, max_steps, created_at, updated_at, prompt_tokens, completion_tokens, step_count, resume_count";
+  "id, goal, status, result, schema_json, max_steps, created_at, updated_at, prompt_tokens, completion_tokens, step_count, resume_count, (conversation_json IS NOT NULL) AS has_conversation";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = getDb();
-  const task = db.prepare(`SELECT ${COLUMNS} FROM tasks WHERE id = ?`).get(id) as Omit<TaskRow, "conversation_json"> | undefined;
+  const task = db.prepare(`SELECT ${COLUMNS} FROM tasks WHERE id = ?`).get(id) as
+    | (Omit<TaskRow, "conversation_json"> & { has_conversation: 0 | 1 })
+    | undefined;
   if (!task) {
     return NextResponse.json({ error: "task not found" }, { status: 404 });
   }
