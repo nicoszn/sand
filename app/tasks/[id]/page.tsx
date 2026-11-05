@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { api, Step, Task, timeAgo } from "@/lib/api";
+import { api, Step, Task, TaskDocumentMeta, timeAgo } from "@/lib/api";
 import { StatusDot } from "@/components/StatusDot";
 
 const KIND_COLOR: Record<string, string> = {
@@ -19,16 +19,19 @@ export default function TaskDetailPage() {
   const taskId = params.id;
   const [task, setTask] = useState<Task | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [documents, setDocuments] = useState<TaskDocumentMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   // Initial load
   useEffect(() => {
     api
       .getTask(taskId)
-      .then(({ task, steps }) => {
+      .then(({ task, steps, documents }) => {
         setTask(task);
         setSteps(steps);
+        setDocuments(documents);
       })
       .catch((e) => setError(e.message));
   }, [taskId]);
@@ -83,6 +86,20 @@ export default function TaskDetailPage() {
     setTask(t);
   };
 
+  const resume = async () => {
+    setResuming(true);
+    try {
+      await api.resumeTask(taskId);
+      const { task: t, steps: s } = await api.getTask(taskId);
+      setTask(t);
+      setSteps(s);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to resume task");
+    } finally {
+      setResuming(false);
+    }
+  };
+
   if (error) {
     return <div style={{ padding: 36, color: "var(--accent-red)" }}>{error}</div>;
   }
@@ -91,6 +108,7 @@ export default function TaskDetailPage() {
   }
 
   const active = task.status === "queued" || task.status === "running";
+  const canResume = task.status === "interrupted" || (task.status === "failed" && task.resume_count > 0);
 
   return (
     <div style={{ padding: "28px 36px", maxWidth: 820 }}>
@@ -104,14 +122,32 @@ export default function TaskDetailPage() {
               cancel
             </button>
           )}
+          {canResume && (
+            <button className="btn btn-primary" onClick={resume} disabled={resuming} style={{ flexShrink: 0 }}>
+              {resuming ? "resuming..." : "resume"}
+            </button>
+          )}
         </div>
         <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 8, fontSize: 12, color: "var(--text-2)" }}>
           <StatusDot status={task.status} />
           <span>step {task.step_count}/{task.max_steps}</span>
           <span>{task.prompt_tokens + task.completion_tokens} tokens</span>
           <span>started {timeAgo(task.created_at)}</span>
+          {task.resume_count > 0 && <span>resumed {task.resume_count}x after restart</span>}
         </div>
+        {documents.length > 0 && (
+          <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-2)" }}>
+            documents: {documents.map((d) => `${d.name} (${d.size.toLocaleString()} chars)`).join(", ")}
+          </div>
+        )}
       </div>
+
+      {task.status === "interrupted" && (
+        <div className="panel" style={{ padding: 14, marginBottom: 18, borderColor: "var(--accent-blue)", color: "var(--text-1)", fontSize: 12.5 }}>
+          This task was interrupted by a server restart and will resume automatically. If it doesn&apos;t, use the resume
+          button above.
+        </div>
+      )}
 
       {task.result && (
         <div

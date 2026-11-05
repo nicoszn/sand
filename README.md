@@ -26,6 +26,56 @@ railpack.json         Railway build config (Node + Python via mise)
 One Railway service. No CORS, no cross-service proxy — the UI and the API
 are the same app on the same origin.
 
+## Configuration
+
+All environment variables are read in one place: `lib/config.ts`. Nothing
+else in the codebase touches `process.env` directly. None of it is secret
+(OpenRouter keys live in SQLite, added from the UI, not env vars), so there's
+nothing required to boot - every value has a default:
+
+| Env var | Default | What it controls |
+|---|---|---|
+| `PORT` | `3000` | set automatically by Railway |
+| `DATA_DIR` | `data` | where the SQLite file lives |
+| `OPENROUTER_API_URL` | OpenRouter's real endpoint | override for testing |
+| `MAX_TASK_RESUMES` | `3` | see "Surviving a restart" below |
+
+## Attaching documents to a task
+
+A task can carry reference text that the agent reads before doing anything
+else - paste `.txt`/`.md`/`.csv`/`.json`/`.log` files in on the **New task**
+page, or pass `documents: [{name, content}]` to `POST /api/tasks`. Content
+is injected into the agent's first message, capped (20k chars/doc, 40k
+total) so one task can't blow the whole token budget. Binary files and
+file parsing (PDF, DOCX, etc.) aren't supported - plain text only, by
+design, to stay inside the resource budget this app runs in.
+
+## Surviving a restart
+
+A task stuck in `running` when the server starts didn't fail - it was cut
+off mid-task by a redeploy, crash, or OOM. The old behavior just marked it
+`failed` and threw the work away. Now:
+
+- Every step persists the full message history to the task's
+  `conversation_json` column, not just the human-readable log.
+- On boot, `instrumentation.ts` → `initTaskRunner()` finds any `running`
+  task, marks it `interrupted`, and **resumes it from the saved
+  conversation** - same step count, same context, picking up with the next
+  model call, not starting over.
+- This repeats automatically up to `MAX_TASK_RESUMES` (default 3)
+  consecutive restarts. A task that keeps crashing the whole server past
+  that point is marked `failed` with an explicit message, rather than
+  retried forever.
+- Even after that, the saved conversation isn't discarded: `POST
+  /api/tasks/[id]/resume` (a "resume" button in the UI) manually resumes
+  it from the exact same point, any time.
+
+This was verified by seeding a task mid-run with a fake saved conversation
+and confirming: (1) it resumes from the correct step with the exact
+message history after a simulated restart, (2) it gives up cleanly at the
+resume cap instead of looping forever, and (3) manual resume still works
+afterward.
+
 ## How a task runs
 
 1. You submit a goal (and optionally a step cap / JSON answer schema).

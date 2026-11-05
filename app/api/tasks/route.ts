@@ -4,16 +4,25 @@ import { z } from "zod";
 import { getDb, now } from "@/lib/server/db";
 import { getSettingInt } from "@/lib/server/settingsStore";
 import { enqueueTask } from "@/lib/server/taskRunner";
+import { addDocuments } from "@/lib/server/documents";
 import { TaskRow } from "@/lib/server/types";
 
 const CreateTaskSchema = z.object({
   goal: z.string().min(1, "goal is required"),
   max_steps: z.number().int().positive().optional(),
   json_schema: z.record(z.unknown()).nullable().optional(),
+  documents: z.array(z.object({ name: z.string().min(1), content: z.string() })).max(10).optional(),
 });
 
+const LIST_COLUMNS =
+  "id, goal, status, result, schema_json, max_steps, created_at, updated_at, prompt_tokens, completion_tokens, step_count, resume_count";
+
 export async function GET() {
-  const rows = getDb().prepare("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100").all() as TaskRow[];
+  // conversation_json is excluded here - it can be large and the list view
+  // doesn't need it; it's read directly from the DB when resuming.
+  const rows = getDb()
+    .prepare(`SELECT ${LIST_COLUMNS} FROM tasks ORDER BY created_at DESC LIMIT 100`)
+    .all() as Omit<TaskRow, "conversation_json">[];
   return NextResponse.json(rows);
 }
 
@@ -23,7 +32,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid request" }, { status: 400 });
   }
-  const { goal, max_steps, json_schema } = parsed.data;
+  const { goal, max_steps, json_schema, documents } = parsed.data;
 
   const hardCap = getSettingInt("max_steps_hard_cap", 25);
   const defaultSteps = getSettingInt("max_steps_default", 12);
@@ -36,6 +45,10 @@ export async function POST(req: NextRequest) {
       "INSERT INTO tasks (id, goal, status, schema_json, max_steps, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, ?, ?)"
     )
     .run(id, goal, json_schema ? JSON.stringify(json_schema) : null, maxSteps, t, t);
+
+  if (documents && documents.length > 0) {
+    addDocuments(id, documents);
+  }
 
   enqueueTask(id, goal, maxSteps, json_schema ?? null);
 

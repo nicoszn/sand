@@ -1,4 +1,4 @@
-export type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
 
 export interface TaskRow {
   id: string;
@@ -12,6 +12,16 @@ export interface TaskRow {
   prompt_tokens: number;
   completion_tokens: number;
   step_count: number;
+  conversation_json: string | null;
+  resume_count: number;
+}
+
+export interface TaskDocument {
+  id: string;
+  task_id: string;
+  name: string;
+  content: string;
+  created_at: number;
 }
 
 export type StepKind = "thought" | "tool_call" | "tool_result" | "final" | "error" | "system";

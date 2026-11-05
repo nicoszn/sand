@@ -1,4 +1,4 @@
-export type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
 
 export interface Task {
   id: string;
@@ -12,6 +12,12 @@ export interface Task {
   prompt_tokens: number;
   completion_tokens: number;
   step_count: number;
+  resume_count: number;
+}
+
+export interface TaskDocumentMeta {
+  name: string;
+  size: number;
 }
 
 export interface Step {
@@ -55,17 +61,25 @@ export const api = {
   listTasks: () => fetch("/api/tasks", { cache: "no-store" }).then((r) => j<Task[]>(r)),
 
   getTask: (id: string) =>
-    fetch(`/api/tasks/${id}`, { cache: "no-store" }).then((r) => j<{ task: Task; steps: Step[] }>(r)),
+    fetch(`/api/tasks/${id}`, { cache: "no-store" }).then((r) => j<{ task: Task; steps: Step[]; documents: TaskDocumentMeta[] }>(r)),
 
-  createTask: (goal: string, max_steps?: number, json_schema?: object | null) =>
+  createTask: (
+    goal: string,
+    max_steps?: number,
+    json_schema?: object | null,
+    documents?: { name: string; content: string }[]
+  ) =>
     fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal, max_steps, json_schema }),
+      body: JSON.stringify({ goal, max_steps, json_schema, documents }),
     }).then((r) => j<{ id: string; status: string; max_steps: number }>(r)),
 
   cancelTask: (id: string) =>
     fetch(`/api/tasks/${id}/cancel`, { method: "POST" }).then((r) => j<{ status: string }>(r)),
+
+  resumeTask: (id: string) =>
+    fetch(`/api/tasks/${id}/resume`, { method: "POST" }).then((r) => j<{ status: string }>(r)),
 
   listKeys: () => fetch("/api/keys", { cache: "no-store" }).then((r) => j<ApiKey[]>(r)),
 
@@ -111,4 +125,5 @@ export const statusColor: Record<TaskStatus, string> = {
   completed: "var(--accent-green)",
   failed: "var(--accent-red)",
   cancelled: "var(--text-2)",
+  interrupted: "var(--accent-blue)",
 };

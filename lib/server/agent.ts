@@ -9,7 +9,13 @@ import { getSetting, getSettingInt, getSettingList } from "./settingsStore";
 import { TOOL_SCHEMAS, TOOL_FUNCTIONS } from "./tools";
 import { chatCompletion, AllKeysExhaustedError, ChatMessage } from "./openrouterClient";
 import { poolSummary } from "./keyManager";
+import { renderDocumentsForPrompt } from "./documents";
 import { StepKind } from "./types";
+
+export interface ResumeState {
+  messages: ChatMessage[];
+  fromStep: number;
+}
 
 const SYSTEM_PROMPT = `You are an autonomous task-completing agent running in a sandbox.
 You have tools to search the web, fetch pages, and run Python or JavaScript code.
@@ -51,11 +57,16 @@ function isCancelled(taskId: string): boolean {
   return row?.status === "cancelled";
 }
 
+function persistConversation(taskId: string, messages: ChatMessage[]) {
+  getDb().prepare("UPDATE tasks SET conversation_json = ? WHERE id = ?").run(JSON.stringify(messages), taskId);
+}
+
 export async function runTask(
   taskId: string,
   goal: string,
   maxSteps: number,
-  jsonSchema: Record<string, unknown> | null
+  jsonSchema: Record<string, unknown> | null,
+  resume?: ResumeState
 ) {
   const model = getSetting("default_model", "qwen/qwen3-coder:free")!;
   const fallbackModels = getSettingList("fallback_models", []);
@@ -63,20 +74,34 @@ export async function runTask(
 
   const modelsToTry = [model, ...fallbackModels.filter((m) => m !== model)];
 
-  const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: goal },
-  ];
-  if (jsonSchema) {
-    messages[0].content += `\nWhen you call finish, the \`answer\` field must be a JSON string matching this schema: ${JSON.stringify(
-      jsonSchema
-    )}`;
+  let messages: ChatMessage[];
+  let startStep: number;
+
+  if (resume) {
+    messages = resume.messages;
+    startStep = resume.fromStep + 1;
+    logStep(taskId, resume.fromStep, "system", `Resumed after a restart (${messages.length} messages carried over).`);
+  } else {
+    messages = [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: goal },
+    ];
+    if (jsonSchema) {
+      messages[0].content += `\nWhen you call finish, the \`answer\` field must be a JSON string matching this schema: ${JSON.stringify(
+        jsonSchema
+      )}`;
+    }
+    const docContext = renderDocumentsForPrompt(taskId);
+    if (docContext) {
+      messages.push({ role: "user", content: docContext });
+    }
+    startStep = 1;
+    logStep(taskId, 0, "system", `Task started. model=${model} max_steps=${maxSteps}`);
   }
 
   updateTask(taskId, { status: "running" });
-  logStep(taskId, 0, "system", `Task started. model=${model} max_steps=${maxSteps}`);
 
-  for (let step = 1; step <= maxSteps; step++) {
+  for (let step = startStep; step <= maxSteps; step++) {
     if (isCancelled(taskId)) {
       logStep(taskId, step, "system", "Task was cancelled.");
       return;
@@ -112,6 +137,7 @@ export async function runTask(
 
     const msg = response.message;
     messages.push(msg);
+    persistConversation(taskId, messages);
 
     const reasoningText = msg.content ?? "";
     if (reasoningText) logStep(taskId, step, "thought", reasoningText);
@@ -158,6 +184,7 @@ export async function runTask(
 
       logStep(taskId, step, "tool_result", resultText);
       messages.push({ role: "tool", tool_call_id: call.id, content: resultText });
+      persistConversation(taskId, messages);
     }
 
     if (finished) return;

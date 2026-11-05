@@ -9,8 +9,15 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
+import { config } from "@/lib/config";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+// The config.dataDir ignore comment below is intentional: this path is only
+// ever "data" (the default) or an operator-controlled DATA_DIR override, so
+// tracing it as a build-time dependency would be wasted work and bloats
+// the deploy output - see the Turbopack warning this otherwise triggers.
+const DATA_DIR = path.isAbsolute(config.dataDir)
+  ? config.dataDir
+  : path.join(/* turbopackIgnore: true */ process.cwd(), config.dataDir);
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, "sandbox.db");
 
@@ -18,7 +25,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     goal TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'queued',
+    status TEXT NOT NULL DEFAULT 'queued',   -- queued|running|completed|failed|cancelled|interrupted
     result TEXT,
     schema_json TEXT,
     max_steps INTEGER NOT NULL,
@@ -26,7 +33,17 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at REAL NOT NULL,
     prompt_tokens INTEGER NOT NULL DEFAULT 0,
     completion_tokens INTEGER NOT NULL DEFAULT 0,
-    step_count INTEGER NOT NULL DEFAULT 0
+    step_count INTEGER NOT NULL DEFAULT 0,
+    conversation_json TEXT,                   -- full message history, for resuming after a restart
+    resume_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS task_documents (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS steps (
@@ -84,10 +101,25 @@ declare global {
   var __agentSandboxDb: Database.Database | undefined;
 }
 
+/** Adds a column to an existing table if it isn't there yet. SQLite has no
+ * `ADD COLUMN IF NOT EXISTS`, so this checks PRAGMA table_info first - lets
+ * a DB created before this column existed pick it up on next boot instead
+ * of needing a fresh database. */
+function ensureColumn(db: Database.Database, table: string, column: string, definition: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 function createConnection(): Database.Database {
   const db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
   db.exec(SCHEMA);
+
+  ensureColumn(db, "tasks", "conversation_json", "TEXT");
+  ensureColumn(db, "tasks", "resume_count", "INTEGER NOT NULL DEFAULT 0");
+
   const insertDefault = db.prepare("INSERT OR IGNORE INTO settings (k, v) VALUES (?, ?)");
   const tx = db.transaction((entries: [string, string][]) => {
     for (const [k, v] of entries) insertDefault.run(k, v);

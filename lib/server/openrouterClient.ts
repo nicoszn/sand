@@ -4,8 +4,9 @@
  * provider returns a 429 (that key probably raced past its window).
  */
 import { acquireKey, recordUsage, NoAvailableKeyError } from "./keyManager";
+import { config } from "@/lib/config";
 
-const API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const API_URL = config.openrouterApiUrl;
 
 export class AllKeysExhaustedError extends Error {}
 

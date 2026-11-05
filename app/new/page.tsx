@@ -12,6 +12,22 @@ export default function NewTaskPage() {
   const [schemaText, setSchemaText] = useState('{\n  "type": "object",\n  "properties": {\n    "answer": { "type": "string" }\n  }\n}');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<{ name: string; content: string }[]>([]);
+
+  const addFiles = async (files: FileList | null) => {
+    if (!files) return;
+    const read = Array.from(files).map(
+      (f) =>
+        new Promise<{ name: string; content: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ name: f.name, content: String(reader.result ?? "") });
+          reader.onerror = reject;
+          reader.readAsText(f);
+        })
+    );
+    const results = await Promise.all(read).catch(() => []);
+    setDocuments((prev) => [...prev, ...results]);
+  };
 
   const submit = async () => {
     setError(null);
@@ -30,7 +46,7 @@ export default function NewTaskPage() {
     }
     setSubmitting(true);
     try {
-      const res = await api.createTask(goal.trim(), maxSteps, schema);
+      const res = await api.createTask(goal.trim(), maxSteps, schema, documents.length ? documents : undefined);
       router.push(`/tasks/${res.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create task");
@@ -85,6 +101,35 @@ export default function NewTaskPage() {
           rows={8}
           style={{ width: "100%", marginBottom: 18, fontSize: 12.5 }}
         />
+      )}
+
+      <label style={{ display: "block", fontSize: 12, color: "var(--text-1)", marginBottom: 6 }}>
+        attach reference documents (text files only - optional)
+      </label>
+      <input
+        type="file"
+        multiple
+        accept=".txt,.md,.csv,.json,.log"
+        onChange={(e) => addFiles(e.target.files)}
+        style={{ width: "100%", marginBottom: documents.length ? 8 : 18 }}
+      />
+      {documents.length > 0 && (
+        <div style={{ marginBottom: 18, fontSize: 12, color: "var(--text-1)" }}>
+          {documents.map((d, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+              <span>
+                {d.name} ({d.content.length.toLocaleString()} chars)
+              </span>
+              <button
+                className="btn"
+                style={{ padding: "2px 8px", fontSize: 11 }}
+                onClick={() => setDocuments((prev) => prev.filter((_, j) => j !== i))}
+              >
+                remove
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       {error && (
