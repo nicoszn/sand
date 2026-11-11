@@ -28,16 +28,24 @@ are the same app on the same origin.
 
 ## Configuration
 
-All environment variables are read in one place: `lib/config.ts`. Nothing
-else in the codebase touches `process.env` directly. None of it is secret
-(OpenRouter keys live in SQLite, added from the UI, not env vars), so there's
-nothing required to boot - every value has a default:
+All app-wide constants live in one place: `lib/config.ts`. There are no
+`process.env` reads anywhere in the app's own code - nothing here is
+meant to vary per-deployment (OpenRouter keys live in SQLite, added from
+the UI, not env vars), so these are just plain named values, not
+environment variables:
 
-| Env var | Default | What it controls |
+| `config.*` | Value | What it controls |
 |---|---|---|
-| `PORT` | `3000` | set automatically by Railway |
-| `DATA_DIR` | `data` | where the SQLite file lives |
-| `OPENROUTER_API_URL` | OpenRouter's real endpoint | override for testing |
+| `dataDir` | `"data"` | where the SQLite file lives |
+| `openrouterApiUrl` | OpenRouter's chat completions endpoint | - |
+
+Two exceptions exist outside `config.ts`, both framework/platform
+requirements rather than app configuration: `instrumentation.ts` checks
+`process.env.NEXT_RUNTIME` because that's Next.js's own documented pattern
+for detecting the Node vs. edge runtime, and `package.json`'s start script
+(`next start -p ${PORT:-3000}`) reads Railway's dynamically-assigned
+`PORT` at the shell level, which Railway requires to route traffic to the
+service correctly.
 
 ## Attaching documents to a task
 
@@ -136,7 +144,7 @@ One service this time:
    - `railpack.json` adds `build-essential` (so `better-sqlite3`'s native
      module compiles during the build) and sets the start command.
 3. No environment variables are required to boot. Railway sets `PORT`
-   automatically; `npm run start` reads it.
+   automatically; the start script reads it directly (see "Configuration").
 4. Add your OpenRouter key(s) from the deployed UI's Keys page — stored in
    the app's SQLite file on the service's volume, not in env vars.
 

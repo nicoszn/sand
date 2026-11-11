@@ -11,13 +11,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { config } from "@/lib/config";
 
-// The config.dataDir ignore comment below is intentional: this path is only
-// ever "data" (the default) or an operator-controlled DATA_DIR override, so
-// tracing it as a build-time dependency would be wasted work and bloats
-// the deploy output - see the Turbopack warning this otherwise triggers.
-const DATA_DIR = path.isAbsolute(config.dataDir)
-  ? config.dataDir
-  : path.join(/* turbopackIgnore: true */ process.cwd(), config.dataDir);
+const DATA_DIR = path.join(process.cwd(), config.dataDir);
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, "sandbox.db");
 
