@@ -2,17 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 import { api, Step, Task, TaskDocumentMeta, timeAgo } from "@/lib/api";
 import { StatusDot } from "@/components/StatusDot";
-
-const KIND_COLOR: Record<string, string> = {
-  thought: "var(--text-1)",
-  tool_call: "var(--accent-blue)",
-  tool_result: "var(--text-1)",
-  final: "var(--accent-green)",
-  error: "var(--accent-red)",
-  system: "var(--text-2)",
-};
+import { StepItem } from "@/components/StepItem";
+import { CopyButton } from "@/components/CopyButton";
 
 export default function TaskDetailPage() {
   const params = useParams<{ id: string }>();
@@ -160,11 +154,18 @@ export default function TaskDetailPage() {
           style={{
             padding: 14,
             marginBottom: 18,
+            maxWidth: "100%",
+            overflowX: "hidden",
             borderColor: task.status === "completed" ? "var(--accent-green)" : "var(--accent-red)",
           }}
         >
-          <div style={{ fontSize: 11, color: "var(--text-2)", marginBottom: 6 }}>result</div>
-          <div style={{ whiteSpace: "pre-wrap", color: "var(--text-0)" }}>{task.result}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+            <span style={{ fontSize: 11, color: "var(--text-2)" }}>result</span>
+            <CopyButton text={task.result} />
+          </div>
+          <div className="markdown-body" style={{ fontSize: 13 }}>
+            <ReactMarkdown>{task.result}</ReactMarkdown>
+          </div>
         </div>
       )}
 
@@ -172,22 +173,18 @@ export default function TaskDetailPage() {
       <div
         ref={logRef}
         className="panel"
-        style={{ padding: 14, maxHeight: 520, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}
+        style={{ padding: "4px 14px", maxHeight: 520, overflowY: "auto", overflowX: "hidden" }}
       >
-        {steps.length === 0 && <div style={{ color: "var(--text-2)" }}>waiting for the first step...</div>}
+        {steps.length === 0 && (
+          <div style={{ color: "var(--text-2)", padding: "10px 0" }}>waiting for the first step...</div>
+        )}
         {steps.map((s, i) => (
-          <div key={i} style={{ display: "flex", gap: 10, fontSize: 12.5 }}>
-            <div style={{ color: "var(--text-2)", flexShrink: 0, width: 28, textAlign: "right" }}>{s.step_index}</div>
-            <div style={{ flexShrink: 0, width: 82, color: KIND_COLOR[s.kind] || "var(--text-1)" }}>{s.kind}</div>
-            <div style={{ color: "var(--text-0)", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1 }}>
-              {s.content}
-            </div>
-          </div>
+          <StepItem key={i} step={s} />
         ))}
         {active && (
-          <div style={{ display: "flex", gap: 10, fontSize: 12.5, color: "var(--text-2)" }}>
-            <div style={{ width: 28 }} />
-            <div>...</div>
+          <div style={{ display: "flex", gap: 10, fontSize: 12.5, color: "var(--text-2)", padding: "6px 0" }}>
+            <div style={{ width: 24 }} />
+            <div>working…</div>
           </div>
         )}
       </div>

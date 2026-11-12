@@ -206,6 +206,85 @@ input:focus, textarea:focus, select:focus {
   background: var(--bg-2);
 }
 
+/* ---- Rendered markdown (task results) ---- */
+.markdown-body {
+  color: var(--text-0);
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  color: var(--text-0);
+  margin: 1em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.markdown-body h1 { font-size: 1.25em; }
+.markdown-body h2 { font-size: 1.12em; }
+.markdown-body h3 { font-size: 1.03em; }
+.markdown-body p {
+  margin: 0.6em 0;
+}
+.markdown-body ul, .markdown-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+}
+.markdown-body li {
+  margin: 0.25em 0;
+}
+.markdown-body a {
+  color: var(--accent-blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-body code {
+  background: var(--bg-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.92em;
+}
+.markdown-body pre {
+  background: var(--bg-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.markdown-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.markdown-body blockquote {
+  margin: 0.6em 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  color: var(--text-1);
+}
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  display: block;
+  overflow-x: auto;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  text-align: left;
+}
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 1em 0;
+}
+
 @media (max-width: 640px) {
   /* Prevents iOS Safari's auto-zoom-on-focus, which fires on any text input
      under 16px - a classic mobile papercut. */

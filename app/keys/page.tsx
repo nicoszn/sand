@@ -14,8 +14,8 @@ export default function KeysPage() {
   const [pool, setPool] = useState<PoolSummary | null>(null);
   const [label, setLabel] = useState("");
   const [value, setValue] = useState("");
-  const [dailyLimit, setDailyLimit] = useState(50);
-  const [minuteLimit, setMinuteLimit] = useState(20);
+  const [dailyLimit, setDailyLimit] = useState("50");
+  const [minuteLimit, setMinuteLimit] = useState("20");
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -39,7 +39,9 @@ export default function KeysPage() {
     }
     setAdding(true);
     try {
-      await api.addKey(label.trim(), value.trim(), dailyLimit, minuteLimit);
+      const daily = Math.max(1, Number(dailyLimit) || 50);
+      const minute = Math.max(1, Number(minuteLimit) || 20);
+      await api.addKey(label.trim(), value.trim(), daily, minute);
       setLabel("");
       setValue("");
       await load();
@@ -75,9 +77,9 @@ export default function KeysPage() {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
           <label style={{ fontSize: 12, color: "var(--text-2)" }}>daily limit</label>
-          <input type="number" value={dailyLimit} onChange={(e) => setDailyLimit(Number(e.target.value))} style={{ width: 80 }} />
+          <input type="number" placeholder="50" value={dailyLimit} onChange={(e) => setDailyLimit(e.target.value)} style={{ width: 80 }} />
           <label style={{ fontSize: 12, color: "var(--text-2)" }}>per-minute limit</label>
-          <input type="number" value={minuteLimit} onChange={(e) => setMinuteLimit(Number(e.target.value))} style={{ width: 80 }} />
+          <input type="number" placeholder="20" value={minuteLimit} onChange={(e) => setMinuteLimit(e.target.value)} style={{ width: 80 }} />
         </div>
         {error && <div style={{ color: "var(--accent-red)", fontSize: 12, marginBottom: 10 }}>{error}</div>}
         <button className="btn btn-primary" onClick={addKey} disabled={adding}>
