@@ -29,8 +29,20 @@ CREATE TABLE IF NOT EXISTS tasks (
     completion_tokens INTEGER NOT NULL DEFAULT 0,
     step_count INTEGER NOT NULL DEFAULT 0,
     conversation_json TEXT,                   -- full message history, for resuming after a restart
-    resume_count INTEGER NOT NULL DEFAULT 0
+    resume_count INTEGER NOT NULL DEFAULT 0,
+    memory_refs_json TEXT,                    -- what workspace memory was injected into this task
+    has_pending_input INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS task_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    consumed INTEGER NOT NULL DEFAULT 0,     -- 0 = the agent hasn't seen this message yet
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_messages ON task_messages(task_id, id);
 
 CREATE TABLE IF NOT EXISTS task_documents (
     id TEXT PRIMARY KEY,
@@ -48,6 +60,45 @@ CREATE TABLE IF NOT EXISTS steps (
     content TEXT NOT NULL,
     created_at REAL NOT NULL
 );
+
+-- Episodic memory: one row per finished task, so later tasks can find and
+-- reuse earlier work instead of repeating it.
+CREATE TABLE IF NOT EXISTS episodes (
+    task_id TEXT PRIMARY KEY,
+    goal TEXT NOT NULL,
+    outcome TEXT NOT NULL,                    -- completed | failed
+    summary TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '',
+    tools TEXT NOT NULL DEFAULT '',
+    step_count INTEGER NOT NULL DEFAULT 0,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+-- Hierarchical memory: topics form a tree, facts hang off the leaves.
+CREATE TABLE IF NOT EXISTS memory_topics (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,                -- "crypto/prices"
+    created_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memories (
+    id TEXT PRIMARY KEY,
+    topic_id TEXT,
+    kind TEXT NOT NULL DEFAULT 'fact',        -- fact | note | entity | preference
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source_task_id TEXT,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    use_count INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    last_used_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(topic_id);
 
 CREATE TABLE IF NOT EXISTS settings (
     k TEXT PRIMARY KEY,
@@ -85,6 +136,8 @@ function createConnection(): Database.Database {
 
   ensureColumn(db, "tasks", "conversation_json", "TEXT");
   ensureColumn(db, "tasks", "resume_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "tasks", "memory_refs_json", "TEXT");
+  ensureColumn(db, "tasks", "has_pending_input", "INTEGER NOT NULL DEFAULT 0");
 
   // Settings the app no longer reads (the model and key moved to `config`).
   // Drop them so an upgraded database doesn't advertise dead config.

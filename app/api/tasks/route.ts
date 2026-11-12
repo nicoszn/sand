@@ -5,6 +5,7 @@ import { getDb, now } from "@/lib/server/db";
 import { getSettingInt } from "@/lib/server/settingsStore";
 import { enqueueTask } from "@/lib/server/taskRunner";
 import { addDocuments } from "@/lib/server/documents";
+import { addUserMessage } from "@/lib/server/messages";
 import { TaskRow } from "@/lib/server/types";
 
 const CreateTaskSchema = z.object({
@@ -15,7 +16,7 @@ const CreateTaskSchema = z.object({
 });
 
 const LIST_COLUMNS =
-  "id, goal, status, result, schema_json, max_steps, created_at, updated_at, prompt_tokens, completion_tokens, step_count, resume_count, (conversation_json IS NOT NULL) AS has_conversation";
+  "id, goal, status, result, schema_json, max_steps, created_at, updated_at, prompt_tokens, completion_tokens, step_count, resume_count, memory_refs_json, (conversation_json IS NOT NULL) AS has_conversation, (SELECT COUNT(*) FROM task_messages WHERE task_id = tasks.id) AS message_count";
 
 export async function GET() {
   // conversation_json itself is excluded - it can be large and the list
@@ -46,6 +47,10 @@ export async function POST(req: NextRequest) {
       "INSERT INTO tasks (id, goal, status, schema_json, max_steps, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, ?, ?)"
     )
     .run(id, goal, json_schema ? JSON.stringify(json_schema) : null, maxSteps, t, t);
+
+  // The goal is the conversation's opening turn; marking it consumed keeps
+  // the agent from appending it a second time.
+  addUserMessage(id, goal, true);
 
   if (documents && documents.length > 0) {
     addDocuments(id, documents);

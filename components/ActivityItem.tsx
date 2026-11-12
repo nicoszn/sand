@@ -13,6 +13,7 @@ import {
   Info,
   Search,
   Terminal,
+  User,
   Wrench,
 } from "lucide-react";
 import { Step } from "@/lib/api";
@@ -36,7 +37,7 @@ export type ActivityEntry =
       id: string;
       kind: "note";
       stepIndex: number;
-      variant: "thought" | "error" | "system";
+      variant: "thought" | "error" | "system" | "user";
       content: string;
     };
 
@@ -50,13 +51,17 @@ const TOOL_META: Record<
   fetch_page: { icon: Globe, verb: "Fetched page", target: (a) => String(a.url ?? "") },
   run_python: { icon: Terminal, verb: "Ran Python", target: (a) => codeSummary(String(a.code ?? "")) },
   run_node: { icon: Braces, verb: "Ran JavaScript", target: (a) => codeSummary(String(a.code ?? "")) },
+  recall: { icon: Brain, verb: "Recalled memory", target: (a) => String(a.query ?? "") },
+  remember: { icon: Brain, verb: "Saved to memory", target: (a) => String(a.title ?? "") },
+  read_task: { icon: Info, verb: "Read prior task", target: (a) => String(a.task_id ?? "") },
   finish: { icon: CheckCircle2, verb: "Finished", target: (a) => String(a.answer ?? "") },
 };
 
-const NOTE_META: Record<"thought" | "error" | "system", { icon: IconType; label: string }> = {
+const NOTE_META: Record<"thought" | "error" | "system" | "user", { icon: IconType; label: string }> = {
   thought: { icon: Brain, label: "Thinking" },
   error: { icon: AlertCircle, label: "Error" },
   system: { icon: Info, label: "System" },
+  user: { icon: User, label: "You" },
 };
 
 function firstLine(text: string): string {
@@ -72,9 +77,7 @@ function codeSummary(code: string): string {
 }
 
 function isFailure(output: string): boolean {
-  return (
-    /^(Tool error:|Unknown tool:|\[Execution)/.test(output) || /\[exit code [1-9]/.test(output)
-  );
+  return /^(Tool error:|Unknown tool:|\[Execution)/.test(output) || /\[exit code [1-9]/.test(output);
 }
 
 export function groupSteps(steps: Step[]): ActivityEntry[] {
@@ -238,7 +241,10 @@ export function ActivityItem({ entry }: { entry: ActivityEntry }) {
   return (
     <div className="act" data-open={open} data-variant={entry.variant}>
       <button className="act-row" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="act-icon" data-tone={entry.variant === "error" ? "error" : "note"}>
+        <span
+          className="act-icon"
+          data-tone={entry.variant === "error" ? "error" : entry.variant === "user" ? "user" : "note"}
+        >
           <Icon size={14} />
         </span>
         <span className="act-main">

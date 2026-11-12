@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
-import { AlertCircle, ArrowLeft, CheckCircle2, RotateCcw, X } from "lucide-react";
-import { api, Step, Task, TaskDocumentMeta, timeAgo } from "@/lib/api";
+import { AlertCircle, ArrowLeft, CheckCircle2, RotateCcw, Send, Sparkles, X } from "lucide-react";
+import { api, MemoryRef, Step, Task, TaskDocumentMeta, timeAgo } from "@/lib/api";
 import { StatusDot } from "@/components/StatusDot";
 import { ActivityItem, groupSteps } from "@/components/ActivityItem";
 import { CopyButton } from "@/components/CopyButton";
@@ -40,6 +40,9 @@ export default function TaskDetailPage() {
   const [documents, setDocuments] = useState<TaskDocumentMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [composerNote, setComposerNote] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,8 +59,8 @@ export default function TaskDetailPage() {
   // Live updates: SSE while the task is active, with a polling fallback.
   useEffect(() => {
     if (!task) return;
-    // Nothing changes for these without a person acting (resume/cancel),
-    // which already refetches - so don't hold a connection open.
+    // Nothing changes for these without a person acting (resume/cancel or
+    // another message), which already refetches.
     if (["completed", "failed", "cancelled", "interrupted"].includes(task.status)) return;
 
     const es = new EventSource(`/api/tasks/${taskId}/stream`);
@@ -119,6 +122,29 @@ export default function TaskDetailPage() {
     }
   };
 
+  const send = async () => {
+    const content = draft.trim();
+    if (!content || sending) return;
+    setSending(true);
+    setComposerNote(null);
+    try {
+      const result = await api.sendMessage(taskId, content);
+      setDraft("");
+      setComposerNote(
+        result.mode === "steering"
+          ? "Sent — the agent picks this up at its next step."
+          : "Queued as the next turn of this task."
+      );
+      const { task: t, steps: s } = await api.getTask(taskId);
+      setTask(t);
+      setSteps(s);
+    } catch (e) {
+      setComposerNote(e instanceof Error ? e.message : "Failed to send message");
+    } finally {
+      setSending(false);
+    }
+  };
+
   if (error) {
     return (
       <>
@@ -140,6 +166,16 @@ export default function TaskDetailPage() {
   const entries = groupSteps(steps);
   const jsonResult = task.result ? structured(task.result) : null;
   const tokens = task.prompt_tokens + task.completion_tokens;
+  const replies = Math.max(0, (task.message_count ?? 1) - 1);
+
+  let refs: MemoryRef[] = [];
+  try {
+    refs = task.memory_refs_json ? (JSON.parse(task.memory_refs_json) as MemoryRef[]) : [];
+  } catch {
+    refs = [];
+  }
+  const priorTasks = refs.filter((ref) => ref.type === "task").length;
+  const priorFacts = refs.filter((ref) => ref.type === "memory").length;
 
   return (
     <>
@@ -169,13 +205,19 @@ export default function TaskDetailPage() {
         <div className="hero-meta">
           <StatusDot status={task.status} />
           <span className="sep" />
-          <span>
-            Step {task.step_count} of {task.max_steps}
-          </span>
+          <span>{task.step_count} steps</span>
           <span className="sep" />
           <span>{tokens.toLocaleString()} tokens</span>
           <span className="sep" />
           <span>Started {timeAgo(task.created_at)}</span>
+          {replies > 0 && (
+            <>
+              <span className="sep" />
+              <span>
+                {replies} follow-up{replies > 1 ? "s" : ""}
+              </span>
+            </>
+          )}
           {task.resume_count > 0 && (
             <>
               <span className="sep" />
@@ -183,6 +225,27 @@ export default function TaskDetailPage() {
             </>
           )}
         </div>
+
+        {refs.length > 0 && (
+          <div className="hero-memory">
+            <Sparkles size={13} />
+            <span>
+              Built on{" "}
+              {priorTasks > 0 && (
+                <strong>
+                  {priorTasks} earlier task{priorTasks > 1 ? "s" : ""}
+                </strong>
+              )}
+              {priorTasks > 0 && priorFacts > 0 && " and "}
+              {priorFacts > 0 && (
+                <strong>
+                  {priorFacts} saved fact{priorFacts > 1 ? "s" : ""}
+                </strong>
+              )}{" "}
+              from <Link href="/memory">memory</Link>
+            </span>
+          </div>
+        )}
 
         {documents.length > 0 && (
           <div className="hero-docs">
@@ -208,7 +271,7 @@ export default function TaskDetailPage() {
               {task.status === "completed" ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
             </span>
             <div className="result-heading">
-              <div className="result-title">Result</div>
+              <div className="result-title">{replies > 0 ? "Latest result" : "Result"}</div>
               <div className="result-sub">
                 {task.status === "completed"
                   ? "Completed"
@@ -217,6 +280,7 @@ export default function TaskDetailPage() {
                     : "Stopped"}
                 {" · "}
                 {task.step_count} {task.step_count === 1 ? "step" : "steps"}
+                {replies > 0 && ` · reply ${replies + 1}`}
               </div>
             </div>
             <CopyButton text={task.result} />
@@ -270,6 +334,34 @@ export default function TaskDetailPage() {
             Working…
           </div>
         )}
+      </div>
+
+      <div className="card composer">
+        <label className="field-label" htmlFor="follow-up">
+          {replies > 0 ? "Reply again" : "Reply or add to this task"}
+        </label>
+        <textarea
+          id="follow-up"
+          rows={3}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") send();
+          }}
+          placeholder="e.g. Now compare only the top two and cite each source. Or: keep going, but fetch the official page this time."
+        />
+        <div className="composer-foot">
+          <span className="hint" style={{ margin: 0 }}>
+            {composerNote ??
+              (active
+                ? "The agent is working — your message reaches it at the next step."
+                : "Continues the same conversation with all of its history. ⌘/Ctrl + Enter to send.")}
+          </span>
+          <button className="btn btn-primary" onClick={send} disabled={sending || !draft.trim()}>
+            <Send size={14} />
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </div>
       </div>
     </>
   );

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ListChecks, Plus, SlidersHorizontal } from "lucide-react";
+import { BookOpen, ListChecks, Plus, SlidersHorizontal } from "lucide-react";
 
 /** Icons are resolved inside this client component by name: the layout is a
  * server component and can't hand components across the boundary. */
 const ICONS = {
   tasks: ListChecks,
   new: Plus,
+  memory: BookOpen,
   settings: SlidersHorizontal,
 };
 

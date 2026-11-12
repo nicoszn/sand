@@ -14,6 +14,8 @@ export interface TaskRow {
   step_count: number;
   conversation_json: string | null;
   resume_count: number;
+  memory_refs_json: string | null;
+  has_pending_input: number;
 }
 
 export interface TaskDocument {
@@ -24,7 +26,9 @@ export interface TaskDocument {
   created_at: number;
 }
 
-export type StepKind = "thought" | "tool_call" | "tool_result" | "final" | "error" | "system";
+/** `user` steps are follow-up messages from the person, shown in the same
+ * timeline as the agent's work. */
+export type StepKind = "thought" | "tool_call" | "tool_result" | "final" | "error" | "system" | "user";
 
 export interface StepRow {
   step_index: number;

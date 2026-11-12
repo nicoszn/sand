@@ -969,6 +969,132 @@ textarea::placeholder {
   }
 }
 
+/* --------------------------------------------- memory + conversation UI */
+
+.hero-memory {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.hero-memory svg {
+  color: var(--accent-amber);
+  flex-shrink: 0;
+}
+.hero-memory strong {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.hero-memory a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.act[data-variant="user"] {
+  background: #fbfdfb;
+}
+.act-icon[data-tone="user"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.act[data-variant="user"] .act-title {
+  color: var(--accent);
+}
+
+.composer {
+  margin-top: 18px;
+  padding: 18px 20px;
+}
+.composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.mem-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.mem-summary strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.mem-summary .sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #cbc4b7;
+}
+
+.mem-group {
+  margin-bottom: 20px;
+}
+.mem-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+}
+.mem-row:first-child {
+  border-top: none;
+}
+.mem-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.mem-title a:hover {
+  color: var(--accent);
+}
+.mem-content {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mem-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.mem-meta a {
+  color: var(--accent-blue);
+}
+.mem-meta .sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #cbc4b7;
+}
+.mem-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 /* ------------------------------------------------------ rendered markdown */
 
 .markdown-body {
@@ -1125,6 +1251,16 @@ textarea::placeholder {
   }
   .result-foot {
     padding: 10px 16px;
+  }
+  .composer {
+    padding: 16px;
+  }
+  .mem-row {
+    padding: 13px 14px;
+    gap: 10px;
+  }
+  .mem-actions {
+    flex-direction: column;
   }
   /* iOS Safari zooms in on inputs under 16px. */
   input,

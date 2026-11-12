@@ -111,6 +111,12 @@ export default function TasksPage() {
                   </span>
                   <span className="sep" />
                   <span>{(t.prompt_tokens + t.completion_tokens).toLocaleString()} tokens</span>
+                  {t.message_count > 1 && (
+                    <>
+                      <span className="sep" />
+                      <span>{t.message_count - 1} follow-up{t.message_count > 2 ? "s" : ""}</span>
+                    </>
+                  )}
                   <span className="sep" />
                   <span>{timeAgo(t.created_at)}</span>
                   {t.status === "interrupted" && t.resume_count > 0 && (

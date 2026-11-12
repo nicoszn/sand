@@ -29,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="nav">
               <NavLink href="/" label="Tasks" icon="tasks" />
               <NavLink href="/new" label="New task" icon="new" />
+              <NavLink href="/memory" label="Memory" icon="memory" />
               <NavLink href="/settings" label="Settings" icon="settings" />
             </nav>
           </div>

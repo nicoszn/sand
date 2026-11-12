@@ -13,10 +13,15 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import * as cheerio from "cheerio";
+import { listMemories, rememberFact, searchEpisodes, readTaskDigest, relativeAge } from "./memory";
 
 const MAX_OUTPUT_CHARS = 6000;
 const CPU_SECONDS = 10;
 const PYTHON_MEMORY_KB = 256 * 1024; // ulimit -v is in KB
+
+export interface ToolContext {
+  taskId: string;
+}
 
 function truncate(text: string): string {
   if (text.length <= MAX_OUTPUT_CHARS) return text;
@@ -126,6 +131,62 @@ async function runInSandbox(
   }
 }
 
+/* ------------------------------------------------------------- memory tools */
+
+function recall(query: string): string {
+  const facts = listMemories(query).slice(0, 6);
+  const episodes = searchEpisodes(query, 3);
+  if (facts.length === 0 && episodes.length === 0) {
+    return "Nothing relevant is stored in workspace memory yet. Work it out from scratch (and use `remember` if the answer is worth keeping).";
+  }
+
+  const parts: string[] = [];
+  if (facts.length > 0) {
+    parts.push(
+      `Saved facts:\n${facts
+        .map((fact) => `- ${fact.topic_path ? `[${fact.topic_path}] ` : ""}${fact.title}: ${fact.content}`)
+        .join("\n")}`
+    );
+  }
+  if (episodes.length > 0) {
+    parts.push(
+      `Earlier tasks that may already cover this:\n${episodes
+        .map(
+          (episode) =>
+            `- ${episode.task_id} (${episode.outcome}, ${relativeAge(episode.updated_at)}): ${episode.goal}\n  ${episode.summary
+              .replace(/\s+/g, " ")
+              .slice(0, 280)}${episode.summary.length > 280 ? "…" : ""}\n  Call read_task with this id for the full result.`
+        )
+        .join("\n")}`
+    );
+  }
+  return truncate(parts.join("\n\n"));
+}
+
+function remember(
+  context: ToolContext,
+  args: Record<string, unknown>
+): string {
+  const saved = rememberFact({
+    taskId: context.taskId,
+    title: String(args.title ?? ""),
+    content: String(args.content ?? ""),
+    topic: args.topic ? String(args.topic) : null,
+    kind: args.kind ? String(args.kind) : null,
+  });
+  const where = saved.topicPath ? ` under "${saved.topicPath}"` : "";
+  return saved.updated
+    ? `Updated the existing memory${where}: ${String(args.title)}`
+    : `Saved to workspace memory${where}: ${String(args.title)}`;
+}
+
+function readTask(taskId: string): string {
+  const digest = readTaskDigest(taskId.trim());
+  return digest ?? `No task found with id "${taskId}".`;
+}
+
+/* ------------------------------------------------------------- definitions */
+
 export const TOOL_SCHEMAS = [
   {
     type: "function",
@@ -180,6 +241,53 @@ export const TOOL_SCHEMAS = [
   {
     type: "function",
     function: {
+      name: "recall",
+      description:
+        "Search workspace memory: durable facts saved by earlier tasks and earlier tasks themselves. Use this before repeating research.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "What you are looking for" } },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remember",
+      description:
+        "Save one durable, reusable fact to workspace memory for future tasks. Do not store secrets, one-off details, or things likely to change within days unless you note the date.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short label, e.g. 'Bitcoin price 2025-11-12'" },
+          content: { type: "string", description: "The fact itself, with any caveats or dates" },
+          topic: {
+            type: "string",
+            description: "Optional hierarchical topic path, e.g. 'crypto/prices' or 'project/api'",
+          },
+          kind: { type: "string", description: "fact | note | entity | preference (default fact)" },
+        },
+        required: ["title", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_task",
+      description:
+        "Read the goal, tools and full result of an earlier task by id (ids appear in your workspace memory notes and in recall results).",
+      parameters: {
+        type: "object",
+        properties: { task_id: { type: "string", description: "Task id, e.g. 05b5f2564f79" } },
+        required: ["task_id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "finish",
       description:
         "Call this when the task is complete (or cannot be completed) to submit the final answer and stop.",
@@ -195,9 +303,19 @@ export const TOOL_SCHEMAS = [
   },
 ];
 
-export const TOOL_FUNCTIONS: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
-  web_search: (args) => webSearch(String(args.query), typeof args.max_results === "number" ? args.max_results : 5),
-  fetch_page: (args) => fetchPage(String(args.url), typeof args.max_chars === "number" ? args.max_chars : 4000),
-  run_python: (args) => runPython(String(args.code), typeof args.timeout_seconds === "number" ? args.timeout_seconds : 20),
-  run_node: (args) => runNode(String(args.code), typeof args.timeout_seconds === "number" ? args.timeout_seconds : 20),
+export const TOOL_FUNCTIONS: Record<
+  string,
+  (args: Record<string, unknown>, context: ToolContext) => Promise<string>
+> = {
+  web_search: async (args) =>
+    webSearch(String(args.query), typeof args.max_results === "number" ? args.max_results : 5),
+  fetch_page: async (args) =>
+    fetchPage(String(args.url), typeof args.max_chars === "number" ? args.max_chars : 4000),
+  run_python: async (args) =>
+    runPython(String(args.code), typeof args.timeout_seconds === "number" ? args.timeout_seconds : 20),
+  run_node: async (args) =>
+    runNode(String(args.code), typeof args.timeout_seconds === "number" ? args.timeout_seconds : 20),
+  recall: async (args) => recall(String(args.query ?? "")),
+  remember: async (args, context) => remember(context, args),
+  read_task: async (args) => readTask(String(args.task_id ?? "")),
 };
