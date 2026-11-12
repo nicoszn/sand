@@ -1,34 +1,56 @@
 "use client";
 
 import { useState } from "react";
-import { Brain, Wrench, CornerDownRight, CheckCircle2, AlertCircle, Info, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  AlertCircle,
+  Brain,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  CornerDownRight,
+  Info,
+  Wrench,
+} from "lucide-react";
 import { Step } from "@/lib/api";
 
-const TRUNCATE_AT = 400;
+/** Compact activity rows. Tool traffic is the noisiest part of a task, so a
+ * call is reduced to its tool name plus a one-line argument preview, and long
+ * content stays collapsed until asked for. */
+const TRUNCATE_AT = 260;
 
 const KIND_META: Record<
   Step["kind"],
-  { icon: React.ComponentType<{ size?: number }>; color: string; label: string }
+  { icon: React.ComponentType<{ size?: number }>; label: string }
 > = {
-  thought: { icon: Brain, color: "var(--text-1)", label: "thinking" },
-  tool_call: { icon: Wrench, color: "var(--accent-blue)", label: "tool call" },
-  tool_result: { icon: CornerDownRight, color: "var(--text-1)", label: "result" },
-  final: { icon: CheckCircle2, color: "var(--accent-green)", label: "final" },
-  error: { icon: AlertCircle, color: "var(--accent-red)", label: "error" },
-  system: { icon: Info, color: "var(--text-2)", label: "system" },
+  thought: { icon: Brain, label: "Thinking" },
+  tool_call: { icon: Wrench, label: "Tool call" },
+  tool_result: { icon: CornerDownRight, label: "Output" },
+  final: { icon: CheckCircle2, label: "Final answer" },
+  error: { icon: AlertCircle, label: "Error" },
+  system: { icon: Info, label: "System" },
 };
 
-/** tool_call content is a JSON string like {"tool":"web_search","args":{...}} -
- * render it as a readable one-liner instead of raw JSON. */
-function formatToolCall(content: string): string {
+function clip(value: unknown, max = 80): string {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (!text) return '""';
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/** Turns {"tool":"web_search","args":{...}} into a readable label + preview. */
+function describeToolCall(content: string): { label: string; preview: string } {
   try {
     const { tool, args } = JSON.parse(content);
-    const argStr = Object.entries(args ?? {})
-      .map(([k, v]) => `${k}: ${typeof v === "string" && v.length > 60 ? v.slice(0, 60) + "…" : JSON.stringify(v)}`)
-      .join(", ");
-    return `${tool}(${argStr})`;
+    const entries = Object.entries(args ?? {});
+    if (entries.length === 0) return { label: String(tool), preview: "no arguments" };
+
+    const [firstKey, firstValue] = entries[0];
+    const rest = entries.length - 1;
+    return {
+      label: String(tool),
+      preview: `${firstKey}: ${clip(firstValue)}${rest > 0 ? `  (+${rest} more)` : ""}`,
+    };
   } catch {
-    return content;
+    return { label: "Tool call", preview: content };
   }
 }
 
@@ -37,45 +59,34 @@ export function StepItem({ step }: { step: Step }) {
   const meta = KIND_META[step.kind] ?? KIND_META.system;
   const Icon = meta.icon;
 
-  const displayContent = step.kind === "tool_call" ? formatToolCall(step.content) : step.content;
-  const isLong = displayContent.length > TRUNCATE_AT;
-  const shown = isLong && !expanded ? displayContent.slice(0, TRUNCATE_AT) + "…" : displayContent;
+  const isToolCall = step.kind === "tool_call";
+  const described = isToolCall ? describeToolCall(step.content) : null;
+  const label = described ? described.label : meta.label;
+  const full = described ? described.preview : step.content;
+
+  const isLong = full.length > TRUNCATE_AT;
+  const shown = isLong && !expanded ? `${full.slice(0, TRUNCATE_AT)}…` : full;
 
   return (
-    <div style={{ display: "flex", gap: 10, fontSize: 12.5, padding: "6px 0" }}>
-      <div style={{ color: "var(--text-2)", flexShrink: 0, width: 24, textAlign: "right", paddingTop: 1 }}>
-        {step.step_index}
-      </div>
-      <div style={{ flexShrink: 0, paddingTop: 1, color: meta.color }}>
+    <div className="tl-item" data-kind={step.kind}>
+      <span className="tl-icon">
         <Icon size={14} />
-      </div>
-      <div style={{ flexShrink: 0, width: 72, color: meta.color }}>{meta.label}</div>
-      <div style={{ color: "var(--text-0)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", flex: 1, minWidth: 0 }}>
-        {shown}
+      </span>
+      <div className="tl-body">
+        <div className="tl-head">
+          <span className="tl-label">{label}</span>
+          <span className="tl-step">#{step.step_index}</span>
+        </div>
+        <div className="tl-text">{shown}</div>
         {isLong && (
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 3,
-              marginLeft: 6,
-              background: "none",
-              border: "none",
-              color: "var(--accent-amber)",
-              fontSize: 11.5,
-              cursor: "pointer",
-              padding: 0,
-              verticalAlign: "middle",
-            }}
-          >
+          <button className="tl-toggle" onClick={() => setExpanded((v) => !v)}>
             {expanded ? (
               <>
-                show less <ChevronUp size={12} />
+                Show less <ChevronUp size={11} />
               </>
             ) : (
               <>
-                show more <ChevronDown size={12} />
+                Show all {full.length.toLocaleString()} characters <ChevronDown size={11} />
               </>
             )}
           </button>

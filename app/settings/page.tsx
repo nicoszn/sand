@@ -1,92 +1,132 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function SettingsPage() {
-  const [values, setValues] = useState<Record<string, string> | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [settings, setSettings] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.getSettings().then(setValues).catch((e) => setError(e.message));
+    api
+      .getSettings()
+      .then(setSettings)
+      .catch((e) => setError(e.message));
   }, []);
 
-  const set = (k: string, v: string) => setValues((prev) => (prev ? { ...prev, [k]: v } : prev));
+  const setField = (k: string, v: string) => setSettings((prev) => (prev ? { ...prev, [k]: v } : prev));
 
   const save = async () => {
-    if (!values) return;
+    if (!settings) return;
     setError(null);
     try {
+      // One visible step limit: the per-task ceiling and the internal safety
+      // cap stay in sync, so nothing hidden contradicts this field.
+      const maxSteps = Math.max(1, Number(settings.max_steps_default) || 12);
       const updated = await api.updateSettings({
-        default_model: values.default_model,
-        fallback_models: JSON.parse(values.fallback_models),
-        max_steps_default: Number(values.max_steps_default),
-        max_steps_hard_cap: Number(values.max_steps_hard_cap),
-        daily_token_budget: Number(values.daily_token_budget),
-        tool_timeout_seconds: Number(values.tool_timeout_seconds),
+        max_steps_default: maxSteps,
+        max_steps_hard_cap: maxSteps,
+        daily_token_budget: Number(settings.daily_token_budget),
+        tool_timeout_seconds: Number(settings.tool_timeout_seconds),
       });
-      setValues(updated);
+      setSettings(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "fallback_models must be valid JSON (an array of model ids)");
+      setError(e instanceof Error ? e.message : "Failed to save settings");
     }
   };
 
-  if (!values) return <div style={{ padding: 36, color: "var(--text-2)" }}>loading...</div>;
-
   return (
-    <div className="page" style={{ maxWidth: 620 }}>
-      <h1 style={{ fontSize: 16, fontWeight: 400, color: "var(--text-0)", margin: "0 0 20px" }}>settings</h1>
-
-      <Field label="default model" hint="OpenRouter model id, e.g. qwen/qwen3-coder:free">
-        <input value={values.default_model} onChange={(e) => set("default_model", e.target.value)} style={{ width: "100%" }} />
-      </Field>
-
-      <Field label="fallback models" hint="JSON array, tried in order if the default model/key fails">
-        <textarea
-          value={values.fallback_models}
-          onChange={(e) => set("fallback_models", e.target.value)}
-          rows={3}
-          style={{ width: "100%", fontSize: 12.5 }}
-        />
-      </Field>
-
-      <div style={{ display: "flex", gap: 24, marginBottom: 18, flexWrap: "wrap" }}>
-        <Field label="default max steps" hint="per task, unless overridden">
-          <input type="number" value={values.max_steps_default} onChange={(e) => set("max_steps_default", e.target.value)} style={{ width: 100 }} />
-        </Field>
-        <Field label="hard step cap" hint="no task can exceed this">
-          <input type="number" value={values.max_steps_hard_cap} onChange={(e) => set("max_steps_hard_cap", e.target.value)} style={{ width: 100 }} />
-        </Field>
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Settings</h1>
+          <p className="page-sub">The limits every task runs under. Stored locally, applied to the next task.</p>
+        </div>
       </div>
 
-      <div style={{ display: "flex", gap: 24, marginBottom: 18, flexWrap: "wrap" }}>
-        <Field label="daily token budget" hint="combined prompt+completion tokens across the whole key pool; tasks stop when hit">
-          <input type="number" value={values.daily_token_budget} onChange={(e) => set("daily_token_budget", e.target.value)} style={{ width: 140 }} />
-        </Field>
-        <Field label="tool timeout (s)" hint="per run_python / run_node call">
-          <input type="number" value={values.tool_timeout_seconds} onChange={(e) => set("tool_timeout_seconds", e.target.value)} style={{ width: 100 }} />
-        </Field>
+      <div className="card">
+        <div className="card-head">
+          <span className="card-title">Task limits</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {saved && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 12,
+                  color: "var(--accent-green)",
+                }}
+              >
+                <Check size={13} />
+                Saved
+              </span>
+            )}
+            <button className="btn btn-sm btn-primary" onClick={save} disabled={!settings}>
+              Save
+            </button>
+          </div>
+        </div>
+
+        {settings ? (
+          <>
+            <div className="limits">
+              <div className="limit">
+                <label className="limit-label" htmlFor="max-steps">
+                  Max steps
+                </label>
+                <input
+                  id="max-steps"
+                  type="number"
+                  min={1}
+                  value={settings.max_steps_default}
+                  onChange={(e) => setField("max_steps_default", e.target.value)}
+                />
+                <div className="limit-hint">Model calls per task</div>
+              </div>
+              <div className="limit">
+                <label className="limit-label" htmlFor="token-budget">
+                  Token budget
+                </label>
+                <input
+                  id="token-budget"
+                  type="number"
+                  min={0}
+                  value={settings.daily_token_budget}
+                  onChange={(e) => setField("daily_token_budget", e.target.value)}
+                />
+                <div className="limit-hint">Per day, all tasks</div>
+              </div>
+              <div className="limit">
+                <label className="limit-label" htmlFor="tool-timeout">
+                  Tool timeout
+                </label>
+                <input
+                  id="tool-timeout"
+                  type="number"
+                  min={1}
+                  value={settings.tool_timeout_seconds}
+                  onChange={(e) => setField("tool_timeout_seconds", e.target.value)}
+                />
+                <div className="limit-hint">Seconds per code run</div>
+              </div>
+            </div>
+            {error && (
+              <div className="notice error" style={{ margin: "0 18px 16px" }}>
+                {error}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ padding: "18px 20px", color: "var(--ink-3)", fontSize: 12.5 }}>
+            {error ?? "Loading limits…"}
+          </div>
+        )}
       </div>
-
-      {error && <div style={{ color: "var(--accent-red)", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
-
-      <button className="btn btn-primary" onClick={save}>
-        save settings
-      </button>
-      {saved && <span style={{ color: "var(--accent-green)", fontSize: 12.5, marginLeft: 12 }}>saved</span>}
-    </div>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <label style={{ display: "block", fontSize: 12, color: "var(--text-1)", marginBottom: 4 }}>{label}</label>
-      {children}
-      {hint && <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>{hint}</div>}
     </div>
   );
 }

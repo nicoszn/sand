@@ -3,12 +3,15 @@
  * repeat, until the model calls finish(), an unrecoverable error occurs, or
  * the step/token cap is hit. Every step is persisted immediately so the UI
  * (or nothing at all) can observe progress at any time.
+ *
+ * There is exactly one model and one key (both from `config`), so there is no
+ * per-model retry ladder here - a failed call is reported and the task stops.
  */
-import { getDb, now } from "./db";
-import { getSetting, getSettingInt, getSettingList } from "./settingsStore";
+import { getDb, now, tokensUsedToday } from "./db";
+import { getSettingInt } from "./settingsStore";
 import { TOOL_SCHEMAS, TOOL_FUNCTIONS } from "./tools";
-import { chatCompletion, AllKeysExhaustedError, ChatMessage } from "./openrouterClient";
-import { poolSummary } from "./keyManager";
+import { chatCompletion, ChatMessage } from "./openrouterClient";
+import { config } from "@/lib/config";
 import { renderDocumentsForPrompt } from "./documents";
 import { StepKind } from "./types";
 
@@ -68,11 +71,7 @@ export async function runTask(
   jsonSchema: Record<string, unknown> | null,
   resume?: ResumeState
 ) {
-  const model = getSetting("default_model", "qwen/qwen3-coder:free")!;
-  const fallbackModels = getSettingList("fallback_models", []);
   const dailyBudget = getSettingInt("daily_token_budget", 200000);
-
-  const modelsToTry = [model, ...fallbackModels.filter((m) => m !== model)];
 
   let messages: ChatMessage[];
   let startStep: number;
@@ -96,7 +95,7 @@ export async function runTask(
       messages.push({ role: "user", content: docContext });
     }
     startStep = 1;
-    logStep(taskId, 0, "system", `Task started. model=${model} max_steps=${maxSteps}`);
+    logStep(taskId, 0, "system", `Task started. model=${config.model} max_steps=${maxSteps}`);
   }
 
   updateTask(taskId, { status: "running" });
@@ -107,29 +106,19 @@ export async function runTask(
       return;
     }
 
-    const pool = poolSummary();
-    if (pool.tokens_used_today >= dailyBudget) {
-      logStep(taskId, step, "error", "Daily token budget reached across the key pool. Pausing task.");
+    if (tokensUsedToday() >= dailyBudget) {
+      logStep(taskId, step, "error", "Daily token budget reached. Pausing task.");
       updateTask(taskId, { status: "failed", result: "Stopped: daily token budget exhausted." });
       return;
     }
 
-    let response = null;
-    let lastError = "";
-    for (const candidateModel of modelsToTry) {
-      try {
-        response = await chatCompletion(candidateModel, messages, TOOL_SCHEMAS, undefined, 1500);
-        break;
-      } catch (e) {
-        lastError =
-          e instanceof AllKeysExhaustedError ? e.message : `${candidateModel}: ${e instanceof Error ? e.message : e}`;
-        continue;
-      }
-    }
-
-    if (!response) {
-      logStep(taskId, step, "error", `All models/keys failed: ${lastError}`);
-      updateTask(taskId, { status: "failed", result: `Stopped: ${lastError}` });
+    let response;
+    try {
+      response = await chatCompletion(messages, TOOL_SCHEMAS, 1500);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      logStep(taskId, step, "error", `Model call failed: ${message}`);
+      updateTask(taskId, { status: "failed", result: `Stopped: ${message}` });
       return;
     }
 

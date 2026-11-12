@@ -20,17 +20,6 @@ export function getSettingInt(key: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export function getSettingList(key: string, fallback: string[] = []): string[] {
-  const v = getSetting(key);
-  if (v === null) return fallback;
-  try {
-    const parsed = JSON.parse(v);
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 export function setManySettings(values: Record<string, unknown>) {
   const db = getDb();
   const upsert = db.prepare(

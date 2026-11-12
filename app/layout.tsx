@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import Link from "next/link";
+import { Boxes } from "lucide-react";
 import "./globals.css";
 import { NavLink } from "@/components/NavLink";
 
@@ -7,9 +9,6 @@ export const metadata: Metadata = {
   description: "Run and monitor autonomous agent tasks",
 };
 
-// Without this, mobile browsers render the page at a desktop width and
-// zoom out - the single most common cause of a page "not being mobile
-// friendly" even when every element below is otherwise responsive.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -19,23 +18,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <div className="app-shell">
-          <aside className="sidebar">
-            <div className="sidebar-header">
-              <div style={{ fontSize: 14, color: "var(--text-0)" }}>agent sandbox</div>
-              <div className="sidebar-subtitle" style={{ fontSize: 11, color: "var(--text-2)", marginTop: 2 }}>
-                local orchestrator
-              </div>
-            </div>
-            <nav className="nav-links">
-              <NavLink href="/" label="tasks" />
-              <NavLink href="/new" label="new task" />
-              <NavLink href="/keys" label="keys & limits" />
-              <NavLink href="/settings" label="settings" />
+        <header className="topbar">
+          <div className="topbar-inner">
+            <Link href="/" className="brand">
+              <span className="brand-mark">
+                <Boxes size={14} />
+              </span>
+              sandbox
+            </Link>
+            <nav className="nav">
+              <NavLink href="/" label="Tasks" icon="tasks" />
+              <NavLink href="/new" label="New task" icon="new" />
+              <NavLink href="/settings" label="Settings" icon="settings" />
             </nav>
-          </aside>
-          <main className="main-content">{children}</main>
-        </div>
+          </div>
+        </header>
+        <main className="shell">{children}</main>
       </body>
     </html>
   );

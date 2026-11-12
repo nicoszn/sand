@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { AlertTriangle, Inbox, Plus } from "lucide-react";
 import { api, Task, timeAgo } from "@/lib/api";
 import { StatusDot } from "@/components/StatusDot";
 
@@ -41,104 +42,113 @@ export default function TasksPage() {
     }
   };
 
-  const interruptedCount = tasks?.filter((t) => t.status === "interrupted").length ?? 0;
+  const interrupted = tasks?.filter((t) => t.status === "interrupted") ?? [];
 
   return (
-    <div className="page" style={{ maxWidth: 980 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <h1 style={{ fontSize: 16, fontWeight: 400, color: "var(--text-0)", margin: 0 }}>tasks</h1>
-        <Link href="/new" className="btn btn-primary" style={{ textDecoration: "none" }}>
-          new task
+    <>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Tasks</h1>
+          <p className="page-sub">Work the agent has queued, is running now, or has finished.</p>
+        </div>
+        <Link href="/new" className="btn btn-primary">
+          <Plus size={15} />
+          New task
         </Link>
       </div>
 
       {error && (
-        <div className="panel" style={{ padding: 14, borderColor: "var(--accent-red)", color: "var(--accent-red)", marginBottom: 16, fontSize: 12.5 }}>
-          Can't reach the backend: {error}. Check that the API service is running and BACKEND_URL is set.
+        <div className="notice error">
+          <AlertTriangle size={16} />
+          <div>Can&apos;t reach the server: {error}</div>
         </div>
       )}
 
-      {interruptedCount > 0 && (
-        <div className="panel" style={{ padding: 14, borderColor: "var(--accent-blue)", marginBottom: 16, fontSize: 12.5 }}>
-          <span style={{ color: "var(--accent-blue)" }}>{interruptedCount}</span>
-          <span style={{ color: "var(--text-1)" }}>
-            {" "}
-            task{interruptedCount > 1 ? "s were" : " was"} interrupted by a server restart and{" "}
-            {interruptedCount > 1 ? "are" : "is"} waiting on you — resume or cancel each below.
-          </span>
-        </div>
-      )}
-
-      {tasks === null && !error && <div style={{ color: "var(--text-2)" }}>loading...</div>}
-
-      {tasks !== null && tasks.length === 0 && (
-        <div className="panel" style={{ padding: 32, textAlign: "center", color: "var(--text-2)" }}>
-          No tasks yet. Give the agent something to do.
-          <div style={{ marginTop: 14 }}>
-            <Link href="/new" className="btn btn-primary" style={{ textDecoration: "none" }}>
-              new task
-            </Link>
+      {interrupted.length > 0 && (
+        <div className="notice">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>
+              {interrupted.length} task{interrupted.length > 1 ? "s were" : " was"} interrupted
+            </strong>{" "}
+            by a restart. Their progress is saved — resume or cancel {interrupted.length > 1 ? "them" : "it"} below.
           </div>
         </div>
       )}
 
+      {tasks === null && !error && (
+        <div className="card empty">
+          <span className="empty-icon">
+            <Inbox size={19} />
+          </span>
+          Loading tasks…
+        </div>
+      )}
+
+      {tasks !== null && tasks.length === 0 && (
+        <div className="card empty">
+          <span className="empty-icon">
+            <Inbox size={19} />
+          </span>
+          <strong>No tasks yet</strong>
+          <span>Give the agent a goal and it will work through it in the background.</span>
+          <Link href="/new" className="btn btn-primary" style={{ marginTop: 8 }}>
+            <Plus size={15} />
+            Start a task
+          </Link>
+        </div>
+      )}
+
       {tasks && tasks.length > 0 && (
-        <div className="panel">
-          {tasks.map((t, i) => (
-            <Link
-              key={t.id}
-              href={`/tasks/${t.id}`}
-              className="row-hover"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: 10,
-                padding: "12px 16px",
-                borderTop: i === 0 ? "none" : "1px solid var(--line-soft)",
-                textDecoration: "none",
-                color: "inherit",
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: "var(--text-0)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {t.goal}
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 3 }}>
-                  step {t.step_count}/{t.max_steps} · {t.prompt_tokens + t.completion_tokens} tokens · {timeAgo(t.created_at)}
-                  {t.status === "interrupted" && t.resume_count > 0 && ` · interrupted ${t.resume_count}x`}
+        <div className="card task-list">
+          {tasks.map((t) => (
+            <Link key={t.id} href={`/tasks/${t.id}`} className="task-row">
+              <div style={{ minWidth: 0 }}>
+                <div className="task-goal">{t.goal}</div>
+                <div className="task-meta">
+                  <span>
+                    {t.step_count}/{t.max_steps} steps
+                  </span>
+                  <span className="sep" />
+                  <span>{(t.prompt_tokens + t.completion_tokens).toLocaleString()} tokens</span>
+                  <span className="sep" />
+                  <span>{timeAgo(t.created_at)}</span>
+                  {t.status === "interrupted" && t.resume_count > 0 && (
+                    <>
+                      <span className="sep" />
+                      <span>interrupted {t.resume_count}×</span>
+                    </>
+                  )}
                 </div>
               </div>
 
-              {t.status === "interrupted" ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                  <StatusDot status={t.status} />
-                  <button
-                    className="btn"
-                    style={{ padding: "4px 10px", fontSize: 11.5 }}
-                    disabled={busyId === t.id}
-                    onClick={(e) => act(t.id, "cancel", e)}
-                  >
-                    cancel
-                  </button>
-                  {!!t.has_conversation && (
-                    <button
-                      className="btn btn-primary"
-                      style={{ padding: "4px 10px", fontSize: 11.5 }}
-                      disabled={busyId === t.id}
-                      onClick={(e) => act(t.id, "resume", e)}
-                    >
-                      {busyId === t.id ? "..." : "resume"}
-                    </button>
-                  )}
-                </div>
-              ) : (
+              <div className="task-actions">
                 <StatusDot status={t.status} />
-              )}
+                {t.status === "interrupted" && (
+                  <>
+                    <button
+                      className="btn btn-sm"
+                      disabled={busyId === t.id}
+                      onClick={(e) => act(t.id, "cancel", e)}
+                    >
+                      Cancel
+                    </button>
+                    {!!t.has_conversation && (
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={busyId === t.id}
+                        onClick={(e) => act(t.id, "resume", e)}
+                      >
+                        {busyId === t.id ? "…" : "Resume"}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </Link>
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }

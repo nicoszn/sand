@@ -19,18 +19,12 @@ export function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
-      className="btn"
-      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", fontSize: 11.5, flexShrink: 0 }}
+      className="btn btn-sm btn-quiet"
+      style={{ color: copied ? "var(--accent-green)" : undefined }}
+      aria-label="Copy result"
     >
-      {copied ? (
-        <>
-          <Check size={13} /> copied
-        </>
-      ) : (
-        <>
-          <Copy size={13} /> copy
-        </>
-      )}
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+      {copied ? "Copied" : "Copy"}
     </button>
   );
 }

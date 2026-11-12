@@ -49,31 +49,6 @@ CREATE TABLE IF NOT EXISTS steps (
     created_at REAL NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS api_keys (
-    id TEXT PRIMARY KEY,
-    label TEXT NOT NULL,
-    key_value TEXT NOT NULL,
-    daily_limit INTEGER NOT NULL DEFAULT 50,
-    minute_limit INTEGER NOT NULL DEFAULT 20,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at REAL NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS key_usage (
-    key_id TEXT NOT NULL,
-    day TEXT NOT NULL,
-    request_count INTEGER NOT NULL DEFAULT 0,
-    prompt_tokens INTEGER NOT NULL DEFAULT 0,
-    completion_tokens INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (key_id, day)
-);
-
-CREATE TABLE IF NOT EXISTS key_minute_window (
-    key_id TEXT PRIMARY KEY,
-    window_start REAL NOT NULL,
-    request_count INTEGER NOT NULL DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS settings (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
@@ -81,12 +56,9 @@ CREATE TABLE IF NOT EXISTS settings (
 `;
 
 const DEFAULT_SETTINGS: Record<string, string> = {
-  default_model: "qwen/qwen3-coder:free",
-  fallback_models: JSON.stringify(["openai/gpt-oss-20b:free", "meta-llama/llama-3.3-70b-instruct:free"]),
   max_steps_default: "12",
   max_steps_hard_cap: "25",
   daily_token_budget: "200000",
-  require_json_schema_default: "false",
   tool_timeout_seconds: "20",
 };
 
@@ -114,6 +86,12 @@ function createConnection(): Database.Database {
   ensureColumn(db, "tasks", "conversation_json", "TEXT");
   ensureColumn(db, "tasks", "resume_count", "INTEGER NOT NULL DEFAULT 0");
 
+  // Settings the app no longer reads (the model and key moved to `config`).
+  // Drop them so an upgraded database doesn't advertise dead config.
+  db.prepare(
+    "DELETE FROM settings WHERE k IN ('default_model', 'fallback_models', 'require_json_schema_default')"
+  ).run();
+
   const insertDefault = db.prepare("INSERT OR IGNORE INTO settings (k, v) VALUES (?, ?)");
   const tx = db.transaction((entries: [string, string][]) => {
     for (const [k, v] of entries) insertDefault.run(k, v);
@@ -131,4 +109,17 @@ export function getDb(): Database.Database {
 
 export function now(): number {
   return Date.now() / 1000;
+}
+
+/** Tokens spent across every task created since midnight UTC - the figure the
+ * daily budget is measured against. */
+export function tokensUsedToday(): number {
+  const midnight = new Date();
+  midnight.setUTCHours(0, 0, 0, 0);
+  const row = getDb()
+    .prepare(
+      "SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS used FROM tasks WHERE created_at >= ?"
+    )
+    .get(midnight.getTime() / 1000) as { used: number };
+  return row.used;
 }

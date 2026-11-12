@@ -28,28 +28,6 @@ export interface Step {
   created_at: number;
 }
 
-export interface ApiKey {
-  id: string;
-  label: string;
-  key_preview: string;
-  enabled: boolean;
-  daily_limit: number;
-  minute_limit: number;
-  requests_today: number;
-  requests_remaining_today: number;
-  prompt_tokens_today: number;
-  completion_tokens_today: number;
-  status: "available" | "exhausted" | "disabled";
-}
-
-export interface PoolSummary {
-  total_keys: number;
-  available_keys: number;
-  requests_remaining_today: number;
-  requests_capacity_today: number;
-  tokens_used_today: number;
-}
-
 async function j<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -62,7 +40,9 @@ export const api = {
   listTasks: () => fetch("/api/tasks", { cache: "no-store" }).then((r) => j<Task[]>(r)),
 
   getTask: (id: string) =>
-    fetch(`/api/tasks/${id}`, { cache: "no-store" }).then((r) => j<{ task: Task; steps: Step[]; documents: TaskDocumentMeta[] }>(r)),
+    fetch(`/api/tasks/${id}`, { cache: "no-store" }).then((r) =>
+      j<{ task: Task; steps: Step[]; documents: TaskDocumentMeta[] }>(r)
+    ),
 
   createTask: (
     goal: string,
@@ -82,26 +62,6 @@ export const api = {
   resumeTask: (id: string) =>
     fetch(`/api/tasks/${id}/resume`, { method: "POST" }).then((r) => j<{ status: string }>(r)),
 
-  listKeys: () => fetch("/api/keys", { cache: "no-store" }).then((r) => j<ApiKey[]>(r)),
-
-  addKey: (label: string, key_value: string, daily_limit: number, minute_limit: number) =>
-    fetch("/api/keys", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label, key_value, daily_limit, minute_limit }),
-    }).then((r) => j<{ id: string }>(r)),
-
-  deleteKey: (id: string) => fetch(`/api/keys/${id}`, { method: "DELETE" }).then((r) => j(r)),
-
-  setKeyEnabled: (id: string, enabled: boolean) =>
-    fetch(`/api/keys/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled }),
-    }).then((r) => j(r)),
-
-  poolSummary: () => fetch("/api/pool", { cache: "no-store" }).then((r) => j<PoolSummary>(r)),
-
   getSettings: () => fetch("/api/settings", { cache: "no-store" }).then((r) => j<Record<string, string>>(r)),
 
   updateSettings: (values: Record<string, unknown>) =>
@@ -119,12 +79,3 @@ export function timeAgo(ts: number): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
-
-export const statusColor: Record<TaskStatus, string> = {
-  queued: "var(--text-2)",
-  running: "var(--accent-amber)",
-  completed: "var(--accent-green)",
-  failed: "var(--accent-red)",
-  cancelled: "var(--text-2)",
-  interrupted: "var(--accent-blue)",
-};
