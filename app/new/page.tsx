@@ -55,7 +55,7 @@ export default function NewTaskPage() {
   };
 
   return (
-    <div style={{ padding: "28px 36px", maxWidth: 640 }}>
+    <div className="page" style={{ maxWidth: 640 }}>
       <h1 style={{ fontSize: 16, fontWeight: 400, color: "var(--text-0)", margin: "0 0 20px" }}>new task</h1>
 
       <label style={{ display: "block", fontSize: 12, color: "var(--text-1)", marginBottom: 6 }}>goal</label>
@@ -67,7 +67,7 @@ export default function NewTaskPage() {
         style={{ width: "100%", resize: "vertical", marginBottom: 18 }}
       />
 
-      <div style={{ display: "flex", gap: 24, marginBottom: 18 }}>
+      <div style={{ display: "flex", gap: 24, marginBottom: 18, flexWrap: "wrap" }}>
         <div>
           <label style={{ display: "block", fontSize: 12, color: "var(--text-1)", marginBottom: 6 }}>
             max steps
@@ -116,7 +116,7 @@ export default function NewTaskPage() {
       {documents.length > 0 && (
         <div style={{ marginBottom: 18, fontSize: 12, color: "var(--text-1)" }}>
           {documents.map((d, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", flexWrap: "wrap", gap: 8 }}>
               <span>
                 {d.name} ({d.content.length.toLocaleString()} chars)
               </span>

@@ -75,6 +75,87 @@ input:focus, textarea:focus, select:focus {
   border-radius: 5px;
 }
 
+/* ---- App shell: sidebar + content, collapsing to a top bar on mobile ---- */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg-1);
+  padding: 20px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.sidebar-header {
+  padding: 0 18px 20px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 14px;
+}
+.nav-links {
+  display: flex;
+  flex-direction: column;
+}
+.main-content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding: 10px 0 0;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .sidebar-header {
+    padding: 0 14px 8px;
+    margin-bottom: 0;
+    border-bottom: none;
+  }
+  .sidebar-subtitle {
+    display: none; /* vertical space is scarce on mobile; the title alone is enough */
+  }
+  .nav-links {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0 10px;
+    gap: 2px;
+  }
+  .nav-link {
+    white-space: nowrap;
+    border-left: none !important;
+    border-bottom: 2px solid transparent;
+    flex-shrink: 0;
+    padding: 10px 12px !important;
+  }
+  .nav-link.active {
+    border-left: none !important;
+    border-bottom-color: var(--accent-amber);
+  }
+}
+
+/* ---- Page content padding: generous on desktop, tight on mobile ---- */
+.page {
+  padding: 28px 36px;
+}
+@media (max-width: 640px) {
+  .page {
+    padding: 16px;
+  }
+}
+
 .nav-link {
   transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
@@ -97,6 +178,7 @@ input:focus, textarea:focus, select:focus {
   font-size: 13px;
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
+  min-height: 36px;
 }
 .btn:hover {
   border-color: var(--text-2);
@@ -122,6 +204,18 @@ input:focus, textarea:focus, select:focus {
 
 .row-hover:hover {
   background: var(--bg-2);
+}
+
+@media (max-width: 640px) {
+  /* Prevents iOS Safari's auto-zoom-on-focus, which fires on any text input
+     under 16px - a classic mobile papercut. */
+  input, textarea, select {
+    font-size: 16px;
+  }
+  .btn {
+    min-height: 40px;
+    padding: 9px 14px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

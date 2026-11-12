@@ -44,8 +44,8 @@ export default function TasksPage() {
   const interruptedCount = tasks?.filter((t) => t.status === "interrupted").length ?? 0;
 
   return (
-    <div style={{ padding: "28px 36px", maxWidth: 980 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 20 }}>
+    <div className="page" style={{ maxWidth: 980 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <h1 style={{ fontSize: 16, fontWeight: 400, color: "var(--text-0)", margin: 0 }}>tasks</h1>
         <Link href="/new" className="btn btn-primary" style={{ textDecoration: "none" }}>
           new task
@@ -92,7 +92,8 @@ export default function TasksPage() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 16,
+                flexWrap: "wrap",
+                gap: 10,
                 padding: "12px 16px",
                 borderTop: i === 0 ? "none" : "1px solid var(--line-soft)",
                 textDecoration: "none",

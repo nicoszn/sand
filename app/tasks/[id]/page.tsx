@@ -115,10 +115,10 @@ export default function TaskDetailPage() {
   const canResume = (task.status === "interrupted" || task.status === "failed") && !!task.has_conversation;
 
   return (
-    <div style={{ padding: "28px 36px", maxWidth: 820 }}>
+    <div className="page" style={{ maxWidth: 820 }}>
       <div style={{ marginBottom: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-          <h1 style={{ fontSize: 15, fontWeight: 400, color: "var(--text-0)", margin: 0, lineHeight: 1.5 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+          <h1 style={{ fontSize: 15, fontWeight: 400, color: "var(--text-0)", margin: 0, lineHeight: 1.5, flex: "1 1 200px", minWidth: 0, wordBreak: "break-word" }}>
             {task.goal}
           </h1>
           {cancellable && (
@@ -132,7 +132,7 @@ export default function TaskDetailPage() {
             </button>
           )}
         </div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 8, fontSize: 12, color: "var(--text-2)" }}>
+        <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 8, fontSize: 12, color: "var(--text-2)", flexWrap: "wrap" }}>
           <StatusDot status={task.status} />
           <span>step {task.step_count}/{task.max_steps}</span>
           <span>{task.prompt_tokens + task.completion_tokens} tokens</span>

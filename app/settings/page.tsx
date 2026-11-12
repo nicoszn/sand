@@ -37,7 +37,7 @@ export default function SettingsPage() {
   if (!values) return <div style={{ padding: 36, color: "var(--text-2)" }}>loading...</div>;
 
   return (
-    <div style={{ padding: "28px 36px", maxWidth: 620 }}>
+    <div className="page" style={{ maxWidth: 620 }}>
       <h1 style={{ fontSize: 16, fontWeight: 400, color: "var(--text-0)", margin: "0 0 20px" }}>settings</h1>
 
       <Field label="default model" hint="OpenRouter model id, e.g. qwen/qwen3-coder:free">
@@ -53,7 +53,7 @@ export default function SettingsPage() {
         />
       </Field>
 
-      <div style={{ display: "flex", gap: 24, marginBottom: 18 }}>
+      <div style={{ display: "flex", gap: 24, marginBottom: 18, flexWrap: "wrap" }}>
         <Field label="default max steps" hint="per task, unless overridden">
           <input type="number" value={values.max_steps_default} onChange={(e) => set("max_steps_default", e.target.value)} style={{ width: 100 }} />
         </Field>
@@ -62,7 +62,7 @@ export default function SettingsPage() {
         </Field>
       </div>
 
-      <div style={{ display: "flex", gap: 24, marginBottom: 18 }}>
+      <div style={{ display: "flex", gap: 24, marginBottom: 18, flexWrap: "wrap" }}>
         <Field label="daily token budget" hint="combined prompt+completion tokens across the whole key pool; tasks stop when hit">
           <input type="number" value={values.daily_token_budget} onChange={(e) => set("daily_token_budget", e.target.value)} style={{ width: 140 }} />
         </Field>

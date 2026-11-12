@@ -51,7 +51,7 @@ export default function KeysPage() {
   };
 
   return (
-    <div style={{ padding: "28px 36px", maxWidth: 820 }}>
+    <div className="page" style={{ maxWidth: 820 }}>
       <h1 style={{ fontSize: 16, fontWeight: 400, color: "var(--text-0)", margin: "0 0 6px" }}>keys & limits</h1>
       <p style={{ color: "var(--text-2)", fontSize: 12.5, margin: "0 0 20px", maxWidth: 560 }}>
         Each free OpenRouter key is capped around 50 requests/day and 20/minute. Add more keys to grow the
@@ -60,7 +60,7 @@ export default function KeysPage() {
       </p>
 
       {pool && (
-        <div className="panel" style={{ display: "flex", padding: 16, marginBottom: 22, gap: 32 }}>
+        <div className="panel" style={{ display: "flex", padding: 16, marginBottom: 22, gap: 24, flexWrap: "wrap" }}>
           <Stat label="keys in pool" value={`${pool.available_keys}/${pool.total_keys} available`} />
           <Stat label="requests left today" value={`${pool.requests_remaining_today}/${pool.requests_capacity_today}`} />
           <Stat label="tokens used today" value={pool.tokens_used_today.toLocaleString()} />
@@ -73,7 +73,7 @@ export default function KeysPage() {
           <input placeholder="label, e.g. personal-1" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: "1 1 160px" }} />
           <input placeholder="sk-or-v1-..." value={value} onChange={(e) => setValue(e.target.value)} type="password" style={{ flex: "2 1 260px" }} />
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
           <label style={{ fontSize: 12, color: "var(--text-2)" }}>daily limit</label>
           <input type="number" value={dailyLimit} onChange={(e) => setDailyLimit(Number(e.target.value))} style={{ width: 80 }} />
           <label style={{ fontSize: 12, color: "var(--text-2)" }}>per-minute limit</label>
@@ -94,7 +94,7 @@ export default function KeysPage() {
       {keys &&
         keys.map((k) => (
           <div key={k.id} className="panel" style={{ padding: 14, marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
               <div>
                 <span style={{ color: "var(--text-0)" }}>{k.label}</span>
                 <span style={{ color: "var(--text-2)", marginLeft: 10, fontSize: 12 }}>{k.key_preview}</span>
@@ -104,7 +104,7 @@ export default function KeysPage() {
 
             <UsageBar used={k.requests_today} limit={k.daily_limit} />
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
               <div style={{ fontSize: 11.5, color: "var(--text-2)" }}>
                 {k.requests_today}/{k.daily_limit} requests today · {k.prompt_tokens_today + k.completion_tokens_today} tokens
               </div>
