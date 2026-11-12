@@ -4,11 +4,33 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
-import { ArrowLeft, RotateCcw, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, RotateCcw, X } from "lucide-react";
 import { api, Step, Task, TaskDocumentMeta, timeAgo } from "@/lib/api";
 import { StatusDot } from "@/components/StatusDot";
-import { StepItem } from "@/components/StepItem";
+import { ActivityItem, groupSteps } from "@/components/ActivityItem";
 import { CopyButton } from "@/components/CopyButton";
+
+/** "1.8s", "2m 10s" - read off the task's own timestamps. */
+function elapsed(task: Task): string {
+  const seconds = Math.max(0, task.updated_at - task.created_at);
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}m ${s}s`;
+}
+
+/** Structured answers get a formatted code block instead of a wall of text. */
+function structured(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed === null || typeof parsed !== "object") return null;
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return null;
+  }
+}
 
 export default function TaskDetailPage() {
   const params = useParams<{ id: string }>();
@@ -115,6 +137,9 @@ export default function TaskDetailPage() {
   const active = task.status === "queued" || task.status === "running";
   const cancellable = active || task.status === "interrupted";
   const canResume = (task.status === "interrupted" || task.status === "failed") && !!task.has_conversation;
+  const entries = groupSteps(steps);
+  const jsonResult = task.result ? structured(task.result) : null;
+  const tokens = task.prompt_tokens + task.completion_tokens;
 
   return (
     <>
@@ -148,7 +173,7 @@ export default function TaskDetailPage() {
             Step {task.step_count} of {task.max_steps}
           </span>
           <span className="sep" />
-          <span>{(task.prompt_tokens + task.completion_tokens).toLocaleString()} tokens</span>
+          <span>{tokens.toLocaleString()} tokens</span>
           <span className="sep" />
           <span>Started {timeAgo(task.created_at)}</span>
           {task.resume_count > 0 && (
@@ -177,33 +202,62 @@ export default function TaskDetailPage() {
       )}
 
       {task.result && (
-        <div className="card result" data-tone={task.status === "completed" ? "completed" : "failed"}>
+        <section className="card result" data-tone={task.status === "completed" ? "done" : "failed"}>
           <div className="result-head">
-            <span className="section-label">Result</span>
+            <span className="result-badge">
+              {task.status === "completed" ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+            </span>
+            <div className="result-heading">
+              <div className="result-title">Result</div>
+              <div className="result-sub">
+                {task.status === "completed"
+                  ? "Completed"
+                  : task.status === "cancelled"
+                    ? "Cancelled"
+                    : "Stopped"}
+                {" · "}
+                {task.step_count} {task.step_count === 1 ? "step" : "steps"}
+              </div>
+            </div>
             <CopyButton text={task.result} />
           </div>
-          <div className="result-body markdown-body">
-            <ReactMarkdown>{task.result}</ReactMarkdown>
+
+          {jsonResult ? (
+            <div className="result-body result-json">
+              <pre>{jsonResult}</pre>
+            </div>
+          ) : (
+            <div className="result-body markdown-body">
+              <ReactMarkdown>{task.result}</ReactMarkdown>
+            </div>
+          )}
+
+          <div className="result-foot">
+            <span>{tokens.toLocaleString()} tokens</span>
+            <span className="sep" />
+            <span>{elapsed(task)}</span>
+            <span className="sep" />
+            <span>Finished {timeAgo(task.updated_at)}</span>
           </div>
-        </div>
+        </section>
       )}
 
       <div className="section-head">
         <span className="section-label">Activity</span>
         <span className="section-meta">
-          {steps.length} {steps.length === 1 ? "entry" : "entries"}
+          {entries.length} {entries.length === 1 ? "action" : "actions"}
         </span>
       </div>
 
       <div className="card" style={{ overflow: "hidden" }}>
-        <div ref={logRef} className="timeline">
-          {steps.length === 0 && (
-            <div style={{ padding: "18px 14px", color: "var(--ink-3)", fontSize: 12.5 }}>
+        <div ref={logRef} className="activity">
+          {entries.length === 0 && (
+            <div style={{ padding: "18px 16px", color: "var(--ink-3)", fontSize: 12.5 }}>
               Waiting for the first step…
             </div>
           )}
-          {steps.map((s, i) => (
-            <StepItem key={`${s.step_index}-${s.kind}-${i}`} step={s} />
+          {entries.map((entry) => (
+            <ActivityItem key={entry.id} entry={entry} />
           ))}
         </div>
         {active && (
