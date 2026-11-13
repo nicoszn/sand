@@ -6,44 +6,15 @@
  * endpoint and one data directory, so these are plain named values rather than
  * deployment variables.
  *
- * This module holds the server-side OpenRouter credential (read from disk), so
- * it must only be imported from server code (route handlers, instrumentation,
- * lib/server/*). Never import it into a client component, or the key ends up in
- * the browser bundle.
+ * This module holds the server-side OpenRouter credential, so it must only be
+ * imported from server code (route handlers, instrumentation, lib/server/*).
+ * Never import it into a client component, or the key ends up in the browser
+ * bundle.
  */
-import fs from "node:fs";
-import path from "node:path";
 
-/** Directory (relative to the project root) holding the SQLite database, the
- * embedding model cache and the key file. */
+/** Directory (relative to the project root) holding the SQLite database and the
+ * embedding model cache. */
 const DATA_DIR = "data";
-
-/**
- * Inline credential slot.
- *
- * Put the key here if you want it in this file: a non-empty value takes
- * precedence over the key file below. It is left empty in the repository
- * because this project is public - a key committed here is a published
- * credential, and git history keeps it even after a later removal.
- */
-const INLINE_API_KEY = "";
-
-/**
- * Fallback: the one OpenRouter key the app authenticates with.
- *
- * Read from `data/openrouter.key` (one line, the key). The data directory is
- * git-ignored, so on a deployment the key lives on the volume next to the
- * database and travels with it.
- *
- * Read once at startup, so rotating the key means restarting the service.
- */
-function readApiKey(): string {
-  try {
-    return fs.readFileSync(path.join(process.cwd(), DATA_DIR, "openrouter.key"), "utf8").trim();
-  } catch {
-    return "";
-  }
-}
 
 export const config = {
   /** Directory (relative to the project root) the SQLite file lives in. */
@@ -55,9 +26,15 @@ export const config = {
   /** The one model the agent uses. No fallbacks, no per-task choice. */
   model: "openrouter/free",
 
-  /** Where the OpenRouter credential is kept, and its value. */
-  openrouterKeyFile: path.join(DATA_DIR, "openrouter.key"),
-  openrouterApiKey: INLINE_API_KEY || readApiKey(),
+  /**
+   * The one OpenRouter key the app authenticates with: paste it between the
+   * quotes.
+   *
+   * Left empty in the repository on purpose - this project is public, so a key
+   * committed here would be a published credential, and git history keeps it
+   * even after a later removal.
+   */
+  openrouterApiKey: "",
 
   /**
    * Local sentence embeddings for semantic memory search. Runs in-process via

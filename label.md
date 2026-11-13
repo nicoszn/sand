@@ -48,7 +48,7 @@ What each part does, in one sentence.
 - `app/tasks/[id]/page.tsx` — result, collapsible activity, memory provenance and the reply composer.
 - `app/memory/page.tsx` — inspect, search, pin and prune the workspace memory.
 - `app/settings/page.tsx` — edit step, token and memory budgets.
-- `app/keys/page.tsx` — manage OpenRouter keys.
+- `app/keys/page.tsx` — redirects to Settings now that the key lives in `lib/config.ts`.
 - `app/layout.tsx` — shell, navigation and page frame.
 - `app/globals.css` — the whole theme and component styling.
 
@@ -63,7 +63,7 @@ What each part does, in one sentence.
 ## Client and config
 
 - `lib/api.ts` — typed fetch helpers every page uses.
-- `lib/config.ts` — app-wide constants, model choice and the API key read from the environment.
+- `lib/config.ts` — app-wide constants, model choice and the inline API key.
 - `next.config.ts` — keeps native packages out of the server bundle.
 - `railpack.json` — Railway build config and start command.
 - `mise.toml` — pins Node 22 and provides Python for the sandbox tool.

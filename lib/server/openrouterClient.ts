@@ -28,7 +28,7 @@ export async function chatCompletion(
 ): Promise<ChatCompletionResult> {
   if (!config.openrouterApiKey) {
     throw new Error(
-      `No OpenRouter key found: put it in ${config.openrouterKeyFile} (one line, the key) and restart.`
+      "No OpenRouter key found: set config.openrouterApiKey in lib/config.ts and restart."
     );
   }
 

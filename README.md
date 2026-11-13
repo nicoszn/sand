@@ -38,16 +38,15 @@ deployment variables:
 | `dataDir` | `"data"` | where the SQLite file and the model cache live |
 | `openrouterApiUrl` | OpenRouter's chat completions endpoint | - |
 | `model` | `"openrouter/free"` | the one model the agent uses |
-| `openrouterKeyFile` | `data/openrouter.key` | where the credential is read from |
+| `openrouterApiKey` | `""` | the OpenRouter credential; paste your key here |
 | `embeddingsEnabled` | `true` | local semantic memory search; set `false` to skip the model |
 | `embeddingsModel` | `Xenova/all-MiniLM-L6-v2` | 384-d encoder used for memory |
 
-The OpenRouter key is read from `data/openrouter.key` (a single line holding
-the key) instead of being written into `config.ts`, because this repository is
-public: a literal key in a tracked file would be a published credential, and
-git history keeps it even after a later removal. `data/` is git-ignored, so on
-a deployment the key sits on the same volume as the database. It is read once
-at startup, so rotating it means restarting the service.
+The OpenRouter key is the value of `config.openrouterApiKey` in `lib/config.ts`.
+It is shipped empty because this repository is public: a literal key in a
+tracked file would be a published credential, and git history keeps it even
+after a later removal. It is read once at startup, so changing it means
+rebuilding/restarting the service.
 
 The only environment read left in the project is `package.json`'s start script
 (`next start -p ${PORT:-3000}`), which Railway requires at the shell level to
@@ -131,8 +130,8 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000, go to **Keys & limits**, paste in an OpenRouter
-free-tier key, then **New task**. `npm run build && npm run start` for a
+Set `openrouterApiKey` in `lib/config.ts` to an OpenRouter free-tier key,
+open http://localhost:3000, then **New task**. `npm run build && npm run start` for a
 production-mode run (what Railway actually runs).
 
 ## Deploying to Railway
@@ -151,8 +150,8 @@ One service this time:
      module compiles during the build) and sets the start command.
 3. No environment variables are required to boot. Railway sets `PORT`
    automatically; the start script reads it directly (see "Configuration").
-4. Write the OpenRouter key into `data/openrouter.key` on the service volume
-   (one line: the key) and restart. It is read once at startup.
+4. Set `config.openrouterApiKey` in `lib/config.ts` to your key and redeploy.
+   It is read once at startup.
 
 ### Fitting the free trial
 
