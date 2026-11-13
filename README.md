@@ -29,23 +29,29 @@ are the same app on the same origin.
 ## Configuration
 
 All app-wide constants live in one place: `lib/config.ts`. There are no
-`process.env` reads anywhere in the app's own code - nothing here is
-meant to vary per-deployment (OpenRouter keys live in SQLite, added from
-the UI, not env vars), so these are just plain named values, not
-environment variables:
+`process.env` reads anywhere in the app's own code - nothing here is meant
+to vary per-deployment, so these are plain named values rather than
+deployment variables:
 
 | `config.*` | Value | What it controls |
 |---|---|---|
-| `dataDir` | `"data"` | where the SQLite file lives |
+| `dataDir` | `"data"` | where the SQLite file and the model cache live |
 | `openrouterApiUrl` | OpenRouter's chat completions endpoint | - |
+| `model` | `"openrouter/free"` | the one model the agent uses |
+| `openrouterKeyFile` | `data/openrouter.key` | where the credential is read from |
+| `embeddingsEnabled` | `true` | local semantic memory search; set `false` to skip the model |
+| `embeddingsModel` | `Xenova/all-MiniLM-L6-v2` | 384-d encoder used for memory |
 
-Two exceptions exist outside `config.ts`, both framework/platform
-requirements rather than app configuration: `instrumentation.ts` checks
-`process.env.NEXT_RUNTIME` because that's Next.js's own documented pattern
-for detecting the Node vs. edge runtime, and `package.json`'s start script
-(`next start -p ${PORT:-3000}`) reads Railway's dynamically-assigned
-`PORT` at the shell level, which Railway requires to route traffic to the
-service correctly.
+The OpenRouter key is read from `data/openrouter.key` (a single line holding
+the key) instead of being written into `config.ts`, because this repository is
+public: a literal key in a tracked file would be a published credential, and
+git history keeps it even after a later removal. `data/` is git-ignored, so on
+a deployment the key sits on the same volume as the database. It is read once
+at startup, so rotating it means restarting the service.
+
+The only environment read left in the project is `package.json`'s start script
+(`next start -p ${PORT:-3000}`), which Railway requires at the shell level to
+route traffic to the service.
 
 ## Attaching documents to a task
 
@@ -145,8 +151,8 @@ One service this time:
      module compiles during the build) and sets the start command.
 3. No environment variables are required to boot. Railway sets `PORT`
    automatically; the start script reads it directly (see "Configuration").
-4. Add your OpenRouter key(s) from the deployed UI's Keys page — stored in
-   the app's SQLite file on the service's volume, not in env vars.
+4. Write the OpenRouter key into `data/openrouter.key` on the service volume
+   (one line: the key) and restart. It is read once at startup.
 
 ### Fitting the free trial
 

@@ -27,7 +27,9 @@ export async function chatCompletion(
   maxTokens = 1500
 ): Promise<ChatCompletionResult> {
   if (!config.openrouterApiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set - add it to .env.local before running tasks.");
+    throw new Error(
+      `No OpenRouter key found: put it in ${config.openrouterKeyFile} (one line, the key) and restart.`
+    );
   }
 
   const payload: Record<string, unknown> = {
