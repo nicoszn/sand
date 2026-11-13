@@ -19,13 +19,21 @@ import path from "node:path";
 const DATA_DIR = "data";
 
 /**
- * The one OpenRouter key the app authenticates with.
+ * Inline credential slot.
  *
- * It is read from `data/openrouter.key` (one line, the key) instead of being
- * written into this file, because this repository is public: a literal key here
- * would be a published credential, and git history keeps it even after a later
- * removal. The data directory is git-ignored, so on a deployment the key lives
- * on the volume next to the database and travels with it.
+ * Put the key here if you want it in this file: a non-empty value takes
+ * precedence over the key file below. It is left empty in the repository
+ * because this project is public - a key committed here is a published
+ * credential, and git history keeps it even after a later removal.
+ */
+const INLINE_API_KEY = "";
+
+/**
+ * Fallback: the one OpenRouter key the app authenticates with.
+ *
+ * Read from `data/openrouter.key` (one line, the key). The data directory is
+ * git-ignored, so on a deployment the key lives on the volume next to the
+ * database and travels with it.
  *
  * Read once at startup, so rotating the key means restarting the service.
  */
@@ -49,7 +57,7 @@ export const config = {
 
   /** Where the OpenRouter credential is kept, and its value. */
   openrouterKeyFile: path.join(DATA_DIR, "openrouter.key"),
-  openrouterApiKey: readApiKey(),
+  openrouterApiKey: INLINE_API_KEY || readApiKey(),
 
   /**
    * Local sentence embeddings for semantic memory search. Runs in-process via
