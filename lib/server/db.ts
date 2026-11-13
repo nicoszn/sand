@@ -100,6 +100,47 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(topic_id);
 
+-- Relation graph over facts: topic / shared-vocabulary / same-task edges.
+-- Used for spreading-activation retrieval and centrality in the retention
+-- score, and kept in SQLite so the graph is inspectable and survives restarts.
+CREATE TABLE IF NOT EXISTS memory_links (
+    from_id TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    kind TEXT NOT NULL,                       -- topic | term | task
+    weight REAL NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (from_id, to_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_links_to ON memory_links(to_id);
+
+-- Local sentence embeddings for semantic retrieval (384-d, MiniLM).
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    memory_id TEXT PRIMARY KEY,
+    dim INTEGER NOT NULL,
+    vector BLOB NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+-- Learned associations: facts retrieved together for a task that succeeded get
+-- a Hebbian edge, so co-use strengthens connections the way experience does.
+CREATE TABLE IF NOT EXISTS memory_co_use (
+    from_id TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    weight REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (from_id, to_id)
+);
+
+-- Token spend per UTC day. Budgeting from the task's created_at was wrong for
+-- conversations that continue on a later day; this counts when tokens were
+-- actually spent.
+CREATE TABLE IF NOT EXISTS token_usage (
+    day TEXT PRIMARY KEY,                     -- YYYY-MM-DD
+    tokens INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_steps_task ON steps(task_id, id);
+
 CREATE TABLE IF NOT EXISTS settings (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
@@ -111,6 +152,10 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   max_steps_hard_cap: "25",
   daily_token_budget: "200000",
   tool_timeout_seconds: "20",
+  // Memory capacity. Which memories survive is decided by retrieval score, not
+  // by these numbers; they only say how much the store may hold.
+  memory_budget_chars: "120000",
+  episode_budget_chars: "400000",
 };
 
 declare global {
@@ -150,6 +195,16 @@ function createConnection(): Database.Database {
     for (const [k, v] of entries) insertDefault.run(k, v);
   });
   tx(Object.entries(DEFAULT_SETTINGS));
+
+  // One-off backfill so a database from before per-day accounting still knows
+  // what was already spent today. Idempotent: existing days are left alone.
+  db.exec(`INSERT OR IGNORE INTO token_usage (day, tokens)
+           SELECT strftime('%Y-%m-%d', created_at, 'unixepoch') AS day,
+                  SUM(prompt_tokens + completion_tokens)
+           FROM tasks
+           WHERE prompt_tokens + completion_tokens > 0
+           GROUP BY day`);
+
   return db;
 }
 
@@ -164,15 +219,17 @@ export function now(): number {
   return Date.now() / 1000;
 }
 
-/** Tokens spent across every task created since midnight UTC - the figure the
- * daily budget is measured against. */
+/** Today's UTC day key, e.g. "2026-11-13". */
+export function dayKey(timestamp = Date.now()): string {
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+/** Tokens spent today, counted at the moment they were spent. Deriving this
+ * from tasks.created_at under-counted a conversation resumed on a later day and
+ * over-counted one that had run the day before. */
 export function tokensUsedToday(): number {
-  const midnight = new Date();
-  midnight.setUTCHours(0, 0, 0, 0);
-  const row = getDb()
-    .prepare(
-      "SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS used FROM tasks WHERE created_at >= ?"
-    )
-    .get(midnight.getTime() / 1000) as { used: number };
-  return row.used;
+  const row = getDb().prepare("SELECT COALESCE(tokens, 0) AS used FROM token_usage WHERE day = ?").get(dayKey()) as
+    | { used: number }
+    | undefined;
+  return row?.used ?? 0;
 }

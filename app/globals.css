@@ -1037,6 +1037,46 @@ textarea::placeholder {
   background: #cbc4b7;
 }
 
+/* Markdown rendered inside summary cards: headings become bold runs instead
+   of literal "##", and blocks stay visually inline. */
+.md-inline {
+  display: block;
+}
+.md-inline .md-heading {
+  font-weight: 650;
+  color: var(--ink);
+}
+.md-inline .md-para,
+.md-inline .md-item {
+  display: inline;
+}
+.md-inline .md-list {
+  display: block;
+  margin: 2px 0;
+}
+.md-inline .md-item::before {
+  content: "· ";
+  color: var(--ink-3);
+}
+.md-inline .md-code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+}
+.md-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mem-policy {
+  margin: -14px 0 22px;
+  max-width: 620px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
 .mem-group {
   margin-bottom: 20px;
 }

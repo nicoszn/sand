@@ -13,9 +13,12 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import * as cheerio from "cheerio";
-import { listMemories, rememberFact, searchEpisodes, readTaskDigest, relativeAge } from "./memory";
+import { rememberFact, searchMemory, searchEpisodes, readTaskDigest, relativeAge } from "./memory";
 
-const MAX_OUTPUT_CHARS = 6000;
+/** Tool output is resent to the model on every later step, so its size is a
+ * per-step cost, not a one-off. 4000 chars is enough for search snippets and
+ * page text while keeping a long task affordable. */
+const MAX_OUTPUT_CHARS = 4000;
 const CPU_SECONDS = 10;
 const PYTHON_MEMORY_KB = 256 * 1024; // ulimit -v is in KB
 
@@ -48,7 +51,7 @@ export async function webSearch(query: string, maxResults = 5): Promise<string> 
   return results.length ? truncate(results.join("\n")) : "No results found.";
 }
 
-export async function fetchPage(url: string, maxChars = 4000): Promise<string> {
+export async function fetchPage(url: string, maxChars = 2500): Promise<string> {
   const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (AgentSandbox)" }, redirect: "follow" });
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
   const contentType = res.headers.get("content-type") ?? "";
@@ -133,8 +136,8 @@ async function runInSandbox(
 
 /* ------------------------------------------------------------- memory tools */
 
-function recall(query: string): string {
-  const facts = listMemories(query).slice(0, 6);
+async function recall(query: string): Promise<string> {
+  const facts = await searchMemory(query, 5);
   const episodes = searchEpisodes(query, 3);
   if (facts.length === 0 && episodes.length === 0) {
     return "Nothing relevant is stored in workspace memory yet. Work it out from scratch (and use `remember` if the answer is worth keeping).";
@@ -143,9 +146,7 @@ function recall(query: string): string {
   const parts: string[] = [];
   if (facts.length > 0) {
     parts.push(
-      `Saved facts:\n${facts
-        .map((fact) => `- ${fact.topic_path ? `[${fact.topic_path}] ` : ""}${fact.title}: ${fact.content}`)
-        .join("\n")}`
+      `Saved facts:\n${facts.map((fact) => `- ${fact.title}: ${fact.content}`).join("\n")}`
     );
   }
   if (episodes.length > 0) {
@@ -256,17 +257,18 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "remember",
       description:
-        "Save one durable, reusable fact to workspace memory for future tasks. Do not store secrets, one-off details, or things likely to change within days unless you note the date.",
+        "Save one durable fact that later tasks should know. Not for secrets, one-off details, or values that change within days unless you record the date.",
       parameters: {
         type: "object",
         properties: {
-          title: { type: "string", description: "Short label, e.g. 'Bitcoin price 2025-11-12'" },
-          content: { type: "string", description: "The fact itself, with any caveats or dates" },
+          title: { type: "string", maxLength: 160, description: "Short label, e.g. 'Bitcoin price 2025-11-12'" },
+          content: { type: "string", maxLength: 2000, description: "The fact, with dates and caveats" },
           topic: {
             type: "string",
-            description: "Optional hierarchical topic path, e.g. 'crypto/prices' or 'project/api'",
+            pattern: "^[a-z0-9][a-z0-9 -]*(/[a-z0-9][a-z0-9 -]*)*$",
+            description: "Hierarchical path in lower case, e.g. 'crypto/prices'",
           },
-          kind: { type: "string", description: "fact | note | entity | preference (default fact)" },
+          kind: { type: "string", enum: ["fact", "note", "entity", "preference"] },
         },
         required: ["title", "content"],
       },
@@ -310,7 +312,7 @@ export const TOOL_FUNCTIONS: Record<
   web_search: async (args) =>
     webSearch(String(args.query), typeof args.max_results === "number" ? args.max_results : 5),
   fetch_page: async (args) =>
-    fetchPage(String(args.url), typeof args.max_chars === "number" ? args.max_chars : 4000),
+    fetchPage(String(args.url), typeof args.max_chars === "number" ? args.max_chars : 2500),
   run_python: async (args) =>
     runPython(String(args.code), typeof args.timeout_seconds === "number" ? args.timeout_seconds : 20),
   run_node: async (args) =>

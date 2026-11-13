@@ -1,6 +1,6 @@
 /** Small write helpers shared by the agent loop, the message API and the
  * task runner, so a step is logged the same way no matter who caused it. */
-import { getDb, now } from "./db";
+import { dayKey, getDb, now } from "./db";
 import { StepKind } from "./types";
 
 export function logStep(taskId: string, index: number, kind: StepKind, content: string) {
@@ -24,9 +24,14 @@ export function updateTask(taskId: string, fields: Record<string, unknown>) {
 }
 
 export function addTokens(taskId: string, promptTokens: number, completionTokens: number) {
-  getDb()
-    .prepare(
-      "UPDATE tasks SET prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ? WHERE id = ?"
-    )
-    .run(promptTokens, completionTokens, taskId);
+  const total = promptTokens + completionTokens;
+  const db = getDb();
+  db.prepare(
+    "UPDATE tasks SET prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ? WHERE id = ?"
+  ).run(promptTokens, completionTokens, taskId);
+  // Budget accounting happens on the day the tokens are spent, not the day the
+  // task was created, so a conversation continued tomorrow costs tomorrow.
+  db.prepare(
+    "INSERT INTO token_usage (day, tokens) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET tokens = tokens + excluded.tokens"
+  ).run(dayKey(), total);
 }

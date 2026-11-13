@@ -30,6 +30,9 @@ export default function SettingsPage() {
         max_steps_hard_cap: maxSteps,
         daily_token_budget: Number(settings.daily_token_budget),
         tool_timeout_seconds: Number(settings.tool_timeout_seconds),
+        // Capacity only: which memories survive is decided by their retention
+        // score, so this is how much the store may hold, not a prune rule.
+        memory_budget_chars: Math.max(2000, Number(settings.memory_budget_chars) || 120000),
       });
       setSettings(updated);
       setSaved(true);
@@ -44,7 +47,9 @@ export default function SettingsPage() {
       <div className="page-head">
         <div>
           <h1 className="page-title">Settings</h1>
-          <p className="page-sub">The limits every task runs under. Stored locally, applied to the next task.</p>
+          <p className="page-sub">
+            The limits every task runs under. Stored locally, applied to the next task.
+          </p>
         </div>
       </div>
 
@@ -113,6 +118,20 @@ export default function SettingsPage() {
                   onChange={(e) => setField("tool_timeout_seconds", e.target.value)}
                 />
                 <div className="limit-hint">Seconds per code run</div>
+              </div>
+              <div className="limit">
+                <label className="limit-label" htmlFor="memory-budget">
+                  Memory budget
+                </label>
+                <input
+                  id="memory-budget"
+                  type="number"
+                  min={2000}
+                  step={1000}
+                  value={settings.memory_budget_chars ?? "120000"}
+                  onChange={(e) => setField("memory_budget_chars", e.target.value)}
+                />
+                <div className="limit-hint">Characters of saved facts</div>
               </div>
             </div>
             {error && (

@@ -10,22 +10,67 @@
  *    and `memories` hang off them as durable facts the agent saved with the
  *    `remember` tool. Facts are deduplicated, pinned, and usage-tracked.
  *
- * Retrieval is lexical (there is no embedding endpoint here, and adding one
- * would mean a second provider): query terms are matched against each record
- * with a Dice-style overlap, then ranked with small bonuses for recency,
- * completion, pinning and past usefulness. That is deterministic, instant and
- * works offline, which suits a single-service app on a small budget.
+ * Retrieval is three-stage. MiniSearch (BM25 + prefix + fuzzy, see
+ * `memoryIndex.ts`) produces lexical seeds; spreading activation over the
+ * relation graph (`memoryGraph.ts`) adds facts that are linked to the seeds but
+ * worded differently; then Maximal Marginal Relevance picks a result set that
+ * covers different facts instead of four paraphrases of one. Small bonuses for
+ * recency, completion, pinning and past usefulness break ties.
+ *
+ * Retention is a model, not a hardcoded cap. Every fact gets a retention score
+ * from ACT-R base-level activation (uses decay as a power of time), PageRank
+ * centrality in the relation graph, and observed utility (how often it was
+ * actually used). The store is bounded by a character budget, and the lowest
+ * scoring memories are evicted as it fills up; near-duplicates are merged.
+ * Nothing expires purely because it is a certain number of days old, and
+ * pinned facts are never evicted.
  */
 import { randomBytes } from "node:crypto";
 import { getDb, now } from "./db";
+import { getSettingInt } from "./settingsStore";
 import { TaskRow } from "./types";
+import { jaccard, terms } from "./text";
+import {
+  activation,
+  fitModel,
+  loadParams,
+  normalizedActivation,
+  retentionScoreFrom,
+  saveParams,
+} from "./memoryModel";
+import { embeddingStatus } from "./embeddings";
+import { markVectorsDirty, queueEmbedding, rankByVector, vectorStats } from "./vectors";
+import { markMemoryIndexDirty, searchEpisodeIndex, searchFactIndex } from "./memoryIndex";
+import {
+  centralityOf,
+  decayCoUse,
+  graphStats,
+  markGraphDirty,
+  neighboursOf,
+  spreadActivation,
+} from "./memoryGraph";
 
-const MAX_EPISODES = 500;
+/** Episodes have no use events of their own, so their decay uses the prior. */
+const EPISODE_DECAY = 0.5;
+
 const MAX_SUMMARY_CHARS = 1600;
-const CONTEXT_BUDGET_CHARS = 3500;
-const EPISODE_SUMMARY_IN_CONTEXT = 420;
-const FACT_CHARS_IN_CONTEXT = 320;
+const CONTEXT_BUDGET_CHARS = 2000;
+const EPISODE_SUMMARY_IN_CONTEXT = 320;
+const FACT_CHARS_IN_CONTEXT = 240;
 const MIN_SCORE = 0.12;
+
+/** Capacity, not policy: the score decides *which* memories survive, these
+ * budgets decide how much the store can hold. Overridable in Settings. */
+const FACT_BUDGET_DEFAULT = 120_000; // characters of fact text (~30k tokens)
+const EPISODE_BUDGET_DEFAULT = 400_000;
+
+export function factBudgetChars() {
+  return Math.max(2_000, getSettingInt("memory_budget_chars", FACT_BUDGET_DEFAULT));
+}
+
+export function episodeBudgetChars() {
+  return Math.max(5_000, getSettingInt("episode_budget_chars", EPISODE_BUDGET_DEFAULT));
+}
 
 export interface MemoryRef {
   type: "task" | "memory";
@@ -39,7 +84,7 @@ export interface MemoryContext {
   refs: MemoryRef[];
 }
 
-interface EpisodeRow {
+export interface EpisodeRow {
   task_id: string;
   goal: string;
   outcome: "completed" | "failed";
@@ -64,42 +109,6 @@ export interface MemoryRow {
   created_at: number;
   updated_at: number;
   last_used_at: number | null;
-}
-
-const STOPWORDS = new Set(
-  "a an the and or but if then than that this these those for from with without into onto over under about after before between of to in on at by is are was were be been being do does did done have has had it its as not no you your we our they their them he she his her i me my what which who whom how why when where all any each more most some such only own same so too very can will just should now also".split(
-    " "
-  )
-);
-
-/** Lower-cased content terms, deduplicated, stopwords and bare numbers dropped
- * so "2025" or "the" don't create false matches. */
-export function terms(text: string): string[] {
-  const out = new Set<string>();
-  for (const raw of text.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (raw.length < 3 || STOPWORDS.has(raw) || /^\d+$/.test(raw)) continue;
-    out.add(raw);
-  }
-  return [...out];
-}
-
-function overlap(query: string[], doc: string[]): number {
-  if (query.length === 0 || doc.length === 0) return 0;
-  const docSet = new Set(doc);
-  let hits = 0;
-  for (const term of query) if (docSet.has(term)) hits++;
-  const coverage = hits / query.length;
-  const dice = (2 * hits) / (query.length + doc.length);
-  return coverage * 0.7 + dice * 0.3;
-}
-
-function jaccard(a: string[], b: string[]): number {
-  const A = new Set(a);
-  const B = new Set(b);
-  if (A.size === 0 || B.size === 0) return 0;
-  let shared = 0;
-  for (const term of A) if (B.has(term)) shared++;
-  return shared / (A.size + B.size - shared);
 }
 
 function recencyBonus(timestamp: number): number {
@@ -170,11 +179,54 @@ export function recordEpisode(taskId: string) {
        updated_at = excluded.updated_at`
   ).run(task.id, task.goal, task.status, summary, tags, tools.join(","), task.step_count, tokens, task.created_at, t);
 
-  db.prepare(
-    `DELETE FROM episodes WHERE task_id NOT IN (
-       SELECT task_id FROM episodes ORDER BY updated_at DESC LIMIT ?
-     )`
-  ).run(MAX_EPISODES);
+  pruneEpisodes();
+  markMemoryIndexDirty();
+}
+
+/** Episodes are kept while their summaries fit the episode budget, weakest
+ * activation first out - so a burst of tasks pushes out the least relevant
+ * older ones, not simply the oldest. */
+function pruneEpisodes() {
+  const budget = episodeBudgetChars();
+  const rows = getDb()
+    .prepare("SELECT task_id, summary, created_at, updated_at, outcome FROM episodes")
+    .all() as { task_id: string; summary: string; created_at: number; updated_at: number; outcome: string }[];
+
+  let used = rows.reduce((sum, row) => sum + row.summary.length, 0);
+  if (used <= budget) return 0;
+
+  const ranked = rows
+    .map((row) => ({
+      row,
+      score:
+        normalizedActivation(
+          activation(
+            {
+              id: row.task_id,
+              created_at: row.created_at,
+              updated_at: row.updated_at,
+              last_used_at: null,
+              use_count: 0,
+            },
+            EPISODE_DECAY,
+            now()
+          )
+        ) + (row.outcome === "completed" ? 0.05 : 0),
+    }))
+    .sort((a, b) => a.score - b.score);
+
+  const remove = getDb().prepare("DELETE FROM episodes WHERE task_id = ?");
+  const tx = getDb().transaction(() => {
+    for (const entry of ranked) {
+      if (used <= budget) break;
+      remove.run(entry.row.task_id);
+      used -= entry.row.summary.length;
+    }
+  });
+  const before = rows.length;
+  tx();
+  const after = (getDb().prepare("SELECT COUNT(*) AS n FROM episodes").get() as { n: number }).n;
+  return before - after;
 }
 
 /** Existing databases predate memory: seed episodes from finished tasks once. */
@@ -190,19 +242,14 @@ export function backfillEpisodes() {
   for (const row of rows) recordEpisode(row.id);
 }
 
-export function searchEpisodes(query: string, limit = 4): EpisodeRow[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM episodes ORDER BY updated_at DESC LIMIT 300")
-    .all() as EpisodeRow[];
-  const queryTerms = terms(query);
-  if (queryTerms.length === 0) return [];
+export function searchEpisodes(query: string, limit = 3): EpisodeRow[] {
+  if (terms(query).length === 0) return [];
 
-  return rows
-    .map((row) => {
-      const base = overlap(queryTerms, terms(`${row.goal} ${row.tags} ${row.summary}`));
-      const bonus = recencyBonus(row.updated_at) + (row.outcome === "completed" ? 0.08 : 0);
-      return { row, score: base + bonus };
-    })
+  return searchEpisodeIndex(query, 30)
+    .map(({ row, score }) => ({
+      row,
+      score: score + recencyBonus(row.updated_at) + (row.outcome === "completed" ? 0.06 : 0),
+    }))
     .filter((entry) => entry.score >= MIN_SCORE)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
@@ -287,6 +334,9 @@ export function rememberFact(input: {
 
   if (duplicate) {
     db.prepare("UPDATE memories SET content = ?, updated_at = ? WHERE id = ?").run(content, now(), duplicate.id);
+    markMemoryIndexDirty();
+    markGraphDirty();
+    queueEmbedding(duplicate.id, title, content);
     return { id: duplicate.id, updated: true, topicPath };
   }
 
@@ -296,49 +346,118 @@ export function rememberFact(input: {
     `INSERT INTO memories (id, topic_id, kind, title, content, source_task_id, pinned, use_count, created_at, updated_at, last_used_at)
      VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL)`
   ).run(id, topicId, input.kind?.trim() || "fact", title, content, input.taskId, t, t);
+  markMemoryIndexDirty();
+  markGraphDirty();
+  // Embedding happens off the write path so `remember` never waits on the model.
+  queueEmbedding(id, title, content);
   return { id, updated: false, topicPath };
 }
 
-export function searchMemory(query: string, limit = 5): MemoryRow[] {
-  const rows = getDb().prepare("SELECT * FROM memories").all() as MemoryRow[];
-  const queryTerms = terms(query);
-  const t = now();
+/** Reciprocal Rank Fusion constant. RRF (Cormack et al.) combines rankings
+ * without needing the three scorers to share a scale - BM25 scores, cosine
+ * similarities and activation values are not comparable, ranks are. */
+const RRF_K = 60;
 
-  if (queryTerms.length === 0) {
-    // No usable query: fall back to the most recently useful, pinned-first facts.
-    return rows
-      .sort((a, b) => b.pinned - a.pinned || (b.last_used_at ?? b.updated_at) - (a.last_used_at ?? a.updated_at))
-      .slice(0, limit);
+/**
+ * Hybrid retrieval:
+ *   lexical (BM25 + fuzzy + prefix)  →  rank list 1
+ *   semantic (MiniLM cosine)         →  rank list 2
+ *   spreading activation over edges  →  rank list 3
+ * fused with RRF, then small tie-breaking bonuses, then diversified by MMR.
+ * Each signal covers what the others miss: exact wording, paraphrase, and
+ * association. If embeddings are unavailable the remaining two still work.
+ */
+async function rankedFacts(query: string): Promise<{ row: MemoryRow; score: number }[]> {
+  const lexical = searchFactIndex(query, 40);
+  const semantic = await rankByVector(query, 40);
+  if (lexical.length === 0 && semantic.length === 0) return [];
+
+  const seedsById = [
+    ...lexical.map((seed) => ({ id: seed.row.id, score: seed.score })),
+    ...semantic.slice(0, 10),
+  ];
+  const graph = [...spreadActivation(seedsById, 0.45).entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+
+  const fused = new Map<string, number>();
+  const fuse = (ids: string[]) => {
+    ids.forEach((id, rank) => fused.set(id, (fused.get(id) ?? 0) + 1 / (RRF_K + rank + 1)));
+  };
+  fuse(lexical.map((seed) => seed.row.id));
+  fuse(semantic.map((entry) => entry.id));
+  fuse(graph);
+
+  const known = new Map(lexical.map((seed) => [seed.row.id, seed.row]));
+  const missing = [...fused.keys()].filter((id) => !known.has(id));
+  if (missing.length > 0) {
+    const placeholders = missing.map(() => "?").join(",");
+    const rows = getDb().prepare(`SELECT * FROM memories WHERE id IN (${placeholders})`).all(...missing) as MemoryRow[];
+    for (const row of rows) known.set(row.id, row);
   }
 
-  const topics = new Map(
-    (getDb().prepare("SELECT id, path FROM memory_topics").all() as { id: string; path: string }[]).map((row) => [
-      row.id,
-      row.path,
-    ])
-  );
-
-  return rows
-    .map((row) => {
-      const path = row.topic_id ? topics.get(row.topic_id) ?? "" : "";
-      const base = overlap(queryTerms, terms(`${row.title} ${row.content} ${path}`));
-      const bonus =
-        (row.pinned ? 0.15 : 0) +
-        Math.min(0.08, Math.log1p(row.use_count) * 0.03) +
-        Math.max(0, 1 - Math.max(0, t - (row.last_used_at ?? row.updated_at)) / 86400 / 60) * 0.05;
-      return { row, score: base + bonus };
+  const top = Math.max(...fused.values(), 1e-9);
+  const t = now();
+  return [...fused.entries()]
+    .filter(([id]) => known.has(id))
+    .map(([id, base]) => {
+      const row = known.get(id)!;
+      return {
+        row,
+        score:
+          base / top +
+          (row.pinned ? 0.15 : 0) +
+          Math.min(0.08, Math.log1p(row.use_count) * 0.03) +
+          Math.max(0, 1 - Math.max(0, t - (row.last_used_at ?? row.updated_at)) / 86400 / 60) * 0.05,
+      };
     })
     .filter((entry) => entry.score >= MIN_SCORE)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((entry) => entry.row);
+    .sort((a, b) => b.score - a.score);
 }
 
-export function listMemories(query?: string): (MemoryRow & { topic_path: string | null })[] {
+/** Maximal Marginal Relevance: greedily pick the highest scoring fact that is
+ * still *different* from what was already picked, so the injected context
+ * covers distinct facts rather than paraphrases of one. */
+function diversify(entries: { row: MemoryRow; score: number }[], limit: number, lambda = 0.65): MemoryRow[] {
+  const pool = entries.map((entry) => ({ ...entry, tokens: terms(`${entry.row.title} ${entry.row.content}`) }));
+  const chosen: MemoryRow[] = [];
+  const chosenTerms: string[][] = [];
+
+  while (chosen.length < limit && pool.length > 0) {
+    let bestIndex = 0;
+    let bestValue = -Infinity;
+    for (let i = 0; i < pool.length; i++) {
+      const similarity = chosenTerms.length
+        ? Math.max(...chosenTerms.map((tokens) => jaccard(tokens, pool[i].tokens)))
+        : 0;
+      const value = lambda * pool[i].score - (1 - lambda) * similarity;
+      if (value > bestValue) {
+        bestValue = value;
+        bestIndex = i;
+      }
+    }
+    chosen.push(pool[bestIndex].row);
+    chosenTerms.push(pool[bestIndex].tokens);
+    pool.splice(bestIndex, 1);
+  }
+  return chosen;
+}
+
+export async function searchMemory(query: string, limit = 4): Promise<MemoryRow[]> {
+  if (terms(query).length === 0) {
+    // No usable query: fall back to the most recently useful, pinned-first facts.
+    return (
+      getDb()
+        .prepare("SELECT * FROM memories ORDER BY pinned DESC, COALESCE(last_used_at, updated_at) DESC LIMIT ?")
+        .all(limit) as MemoryRow[]
+    ).slice(0, limit);
+  }
+  return diversify(await rankedFacts(query), limit);
+}
+
+export async function listMemories(query?: string): Promise<(MemoryRow & { topic_path: string | null })[]> {
   const db = getDb();
   const rows = (
     query && query.trim()
-      ? searchMemory(query, 100)
+      ? await searchMemory(query, 100)
       : (db
           .prepare(
             "SELECT * FROM memories ORDER BY pinned DESC, COALESCE(last_used_at, updated_at) DESC LIMIT 200"
@@ -355,19 +474,112 @@ export function listMemories(query?: string): (MemoryRow & { topic_path: string 
   return rows.map((row) => ({
     ...row,
     topic_path: row.topic_id ? topics.get(row.topic_id) ?? null : null,
+    degree: neighboursOf(row.id).length,
   }));
 }
 
 export function setMemoryPinned(id: string, pinned: boolean) {
   getDb().prepare("UPDATE memories SET pinned = ?, updated_at = ? WHERE id = ?").run(pinned ? 1 : 0, now(), id);
+  markMemoryIndexDirty();
 }
 
 export function deleteMemory(id: string) {
-  getDb().prepare("DELETE FROM memories WHERE id = ?").run(id);
+  const db = getDb();
+  db.prepare("DELETE FROM memories WHERE id = ?").run(id);
+  db.prepare("DELETE FROM memory_vectors WHERE memory_id = ?").run(id);
+  db.prepare("DELETE FROM memory_co_use WHERE from_id = ? OR to_id = ?").run(id, id);
+  markVectorsDirty();
+  markMemoryIndexDirty();
+  markGraphDirty();
 }
 
 export function deleteEpisode(taskId: string) {
   getDb().prepare("DELETE FROM episodes WHERE task_id = ?").run(taskId);
+  markMemoryIndexDirty();
+}
+
+export interface PruneReport {
+  factsEvicted: number;
+  factsMerged: number;
+  episodesEvicted: number;
+  topicsRemoved: number;
+  budgetChars: number;
+  usedChars: number;
+}
+
+/** Retention scoring with the fitted parameters: ACT-R base-level activation
+ * says how strongly a memory is still retrievable, PageRank centrality says how
+ * much the rest of the store depends on it, and utility says whether it has
+ * actually earned its place. The decay exponent and the three weights come from
+ * `memoryModel.fitModel`, not from constants. */
+export function retentionScore(row: MemoryRow, params = loadParams()): number {
+  return retentionScoreFrom(row, params, centralityOf(row.id));
+}
+
+/** Dynamic pruning. There is no age limit and no per-topic count: every fact is
+ * scored, near-duplicates merge into the stronger one, and the rest are kept in
+ * score order until the character budget is full - so the weakest memories are
+ * the ones that go, and the store adapts to what the workspace actually uses.
+ * Pinned facts are always kept. */
+export function pruneMemory(): PruneReport {
+  const db = getDb();
+  const budget = factBudgetChars();
+  const facts = db.prepare("SELECT * FROM memories").all() as MemoryRow[];
+
+  // Refit from this workspace's own usage before deciding what survives, then
+  // apply the fitted model. With too little data `fitModel` returns the priors.
+  const params = fitModel(facts, centralityOf);
+  saveParams(params);
+
+  const ranked = facts
+    .map((row) => ({ row, score: retentionScore(row, params) }))
+    .sort((a, b) => b.row.pinned - a.row.pinned || b.score - a.score);
+
+  const kept: { tokens: string[] }[] = [];
+  const remove = db.prepare("DELETE FROM memories WHERE id = ?");
+  let factsEvicted = 0;
+  let factsMerged = 0;
+  let usedChars = 0;
+
+  const tx = db.transaction(() => {
+    for (const entry of ranked) {
+      const entryTerms = terms(`${entry.row.title} ${entry.row.content}`);
+      if (kept.some((other) => jaccard(other.tokens, entryTerms) >= 0.8)) {
+        remove.run(entry.row.id);
+        factsMerged++;
+        continue;
+      }
+      const cost = entry.row.title.length + entry.row.content.length;
+      if (entry.row.pinned || usedChars + cost <= budget) {
+        kept.push({ tokens: entryTerms });
+        usedChars += cost;
+        continue;
+      }
+      remove.run(entry.row.id);
+      factsEvicted++;
+    }
+  });
+  tx();
+
+  const topicsRemoved = db
+    .prepare(
+      `DELETE FROM memory_topics
+       WHERE id NOT IN (SELECT topic_id FROM memories WHERE topic_id IS NOT NULL)
+         AND id NOT IN (SELECT parent_id FROM memory_topics WHERE parent_id IS NOT NULL)`
+    )
+    .run().changes;
+
+  const episodesEvicted = pruneEpisodes();
+  // Associations fade too: unused co-use edges decay on a 90-day half-life.
+  decayCoUse();
+
+  if (factsEvicted + factsMerged > 0) {
+    markMemoryIndexDirty();
+    markGraphDirty();
+  }
+  if (episodesEvicted > 0) markMemoryIndexDirty();
+
+  return { factsEvicted, factsMerged, episodesEvicted, topicsRemoved, budgetChars: budget, usedChars };
 }
 
 export function memoryStats() {
@@ -375,7 +587,21 @@ export function memoryStats() {
   const facts = (db.prepare("SELECT COUNT(*) AS n FROM memories").get() as { n: number }).n;
   const topics = (db.prepare("SELECT COUNT(*) AS n FROM memory_topics").get() as { n: number }).n;
   const episodes = (db.prepare("SELECT COUNT(*) AS n FROM episodes").get() as { n: number }).n;
-  return { facts, topics, episodes };
+  const usedChars = (db.prepare("SELECT COALESCE(SUM(LENGTH(title) + LENGTH(content)), 0) AS n FROM memories").get() as {
+    n: number;
+  }).n;
+  const graph = graphStats();
+  return {
+    facts,
+    topics,
+    episodes,
+    usedChars,
+    budgetChars: factBudgetChars(),
+    links: graph.edges,
+    model: loadParams(),
+    vectors: vectorStats(),
+    embeddings: embeddingStatus(),
+  };
 }
 
 /** Usage is tracked because frequently reused memories should rank higher. */
@@ -394,9 +620,9 @@ export function markMemoriesUsed(ids: string[]) {
 /** Builds the "what we already know" block injected into a new task's system
  * prompt, plus the refs the UI shows as provenance. Returns null when nothing
  * relevant is remembered, so unrelated tasks stay clean. */
-export function buildMemoryContext(taskId: string, query: string): MemoryContext | null {
-  const episodes = searchEpisodes(query, 4);
-  const memories = searchMemory(query, 5);
+export async function buildMemoryContext(taskId: string, query: string): Promise<MemoryContext | null> {
+  const episodes = searchEpisodes(query, 3);
+  const memories = await searchMemory(query, 4);
   if (episodes.length === 0 && memories.length === 0) return null;
 
   const refs: MemoryRef[] = [];

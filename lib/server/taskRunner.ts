@@ -17,7 +17,9 @@
 import { getDb, now } from "./db";
 import { runTask, TurnState } from "./agent";
 import { ChatMessage } from "./openrouterClient";
-import { backfillEpisodes, recordEpisode } from "./memory";
+import { backfillEpisodes, pruneMemory, recordEpisode } from "./memory";
+import { strengthenCoUse } from "./memoryGraph";
+import { backfillVectors } from "./vectors";
 import {
   MAX_MESSAGE_CHARS,
   addUserMessage,
@@ -90,6 +92,22 @@ async function processQueue() {
       if (row && row.result && (row.status === "completed" || row.status === "failed")) {
         try {
           recordEpisode(taskId);
+          // Hebbian update: the facts this task was given and used successfully
+          // become associated with each other for later tasks.
+          if (row.status === "completed") {
+            const refs = getDb().prepare("SELECT memory_refs_json FROM tasks WHERE id = ?").get(taskId) as
+              | { memory_refs_json: string | null }
+              | undefined;
+            if (refs?.memory_refs_json) {
+              const ids = (JSON.parse(refs.memory_refs_json) as { type: string; id: string }[])
+                .filter((ref) => ref.type === "memory")
+                .map((ref) => ref.id);
+              strengthenCoUse(ids);
+            }
+          }
+          // Cheap (few indexed deletes) and keeps the store bounded without a
+          // scheduler: prune every time new memory is written.
+          pruneMemory();
         } catch {
           /* memory is a bonus; never fail a task over it */
         }
@@ -250,7 +268,17 @@ export function initTaskRunner() {
   // Databases that predate memory get their finished tasks indexed now.
   try {
     backfillEpisodes();
+    pruneMemory();
   } catch {
     /* best effort */
   }
+
+  // Load the embedding model and embed anything it has not seen yet, in the
+  // background: a cold start must not wait for a model download, and lexical
+  // retrieval covers the gap until it is ready.
+  void (async () => {
+    const { warmEmbeddings } = await import("./embeddings");
+    await warmEmbeddings();
+    await backfillVectors(200);
+  })().catch(() => undefined);
 }

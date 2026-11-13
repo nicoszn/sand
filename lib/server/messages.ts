@@ -23,6 +23,7 @@ export function addUserMessage(taskId: string, content: string, consumed = false
   const result = db
     .prepare("INSERT INTO task_messages (task_id, role, content, consumed, created_at) VALUES (?, 'user', ?, ?, ?)")
     .run(taskId, content, consumed ? 1 : 0, now());
+  if (!consumed) db.prepare("UPDATE tasks SET has_pending_input = 1 WHERE id = ?").run(taskId);
   return Number(result.lastInsertRowid);
 }
 
@@ -37,6 +38,8 @@ export function takePendingMessages(taskId: string): PendingMessage[] {
   const mark = db.prepare("UPDATE task_messages SET consumed = 1 WHERE id = ?");
   const tx = db.transaction((items: PendingMessage[]) => {
     for (const item of items) mark.run(item.id);
+    // Keep the flag honest: it used to be set in one place and never cleared.
+    db.prepare("UPDATE tasks SET has_pending_input = 0 WHERE id = ?").run(taskId);
   });
   tx(rows);
   return rows;

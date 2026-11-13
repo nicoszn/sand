@@ -12,7 +12,7 @@ import {
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q") ?? "";
   return NextResponse.json({
-    memories: listMemories(q),
+    memories: await listMemories(q),
     episodes: listEpisodes(40),
     stats: memoryStats(),
   });

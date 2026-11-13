@@ -24,4 +24,13 @@ export const config = {
    * `.env.local` (git-ignored) as OPENROUTER_API_KEY.
    */
   openrouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
+
+  /**
+   * Local sentence embeddings for semantic memory search. Runs in-process via
+   * Transformers.js, so there is no second provider or API key; set
+   * EMBEDDINGS=off to skip the model entirely (retrieval then falls back to
+   * BM25 plus graph activation).
+   */
+  embeddingsEnabled: process.env.EMBEDDINGS !== "off",
+  embeddingsModel: "Xenova/all-MiniLM-L6-v2",
 } as const;

@@ -43,6 +43,8 @@ export default function TaskDetailPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [composerNote, setComposerNote] = useState<string | null>(null);
+  // The step log is diagnostics, not the answer: keep it closed until asked for.
+  const [showActivity, setShowActivity] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -205,7 +207,9 @@ export default function TaskDetailPage() {
         <div className="hero-meta">
           <StatusDot status={task.status} />
           <span className="sep" />
-          <span>{task.step_count} steps</span>
+          <span>
+            {task.step_count} {task.step_count === 1 ? "step" : "steps"}
+          </span>
           <span className="sep" />
           <span>{tokens.toLocaleString()} tokens</span>
           <span className="sep" />
@@ -308,23 +312,15 @@ export default function TaskDetailPage() {
 
       <div className="section-head">
         <span className="section-label">Activity</span>
-        <span className="section-meta">
-          {entries.length} {entries.length === 1 ? "action" : "actions"}
-        </span>
+        <button className="btn btn-sm" onClick={() => setShowActivity((open) => !open)} aria-expanded={showActivity}>
+          {showActivity
+            ? "Hide"
+            : `Show ${entries.length} ${entries.length === 1 ? "action" : "actions"}`}
+        </button>
       </div>
 
-      <div className="card" style={{ overflow: "hidden" }}>
-        <div ref={logRef} className="activity">
-          {entries.length === 0 && (
-            <div style={{ padding: "18px 16px", color: "var(--ink-3)", fontSize: 12.5 }}>
-              Waiting for the first step…
-            </div>
-          )}
-          {entries.map((entry) => (
-            <ActivityItem key={entry.id} entry={entry} />
-          ))}
-        </div>
-        {active && (
+      {active && !showActivity && (
+        <div className="card" style={{ overflow: "hidden" }}>
           <div className="working">
             <span className="dot-pulse">
               <i />
@@ -333,8 +329,33 @@ export default function TaskDetailPage() {
             </span>
             Working…
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {showActivity && (
+        <div className="card" style={{ overflow: "hidden" }}>
+          <div ref={logRef} className="activity">
+            {entries.length === 0 && (
+              <div style={{ padding: "18px 16px", color: "var(--ink-3)", fontSize: 12.5 }}>
+                Waiting for the first step…
+              </div>
+            )}
+            {entries.map((entry) => (
+              <ActivityItem key={entry.id} entry={entry} />
+            ))}
+          </div>
+          {active && (
+            <div className="working">
+              <span className="dot-pulse">
+                <i />
+                <i />
+                <i />
+              </span>
+              Working…
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card composer">
         <label className="field-label" htmlFor="follow-up">

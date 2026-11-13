@@ -17,7 +17,7 @@ import { chatCompletion, ChatMessage } from "./openrouterClient";
 import { config } from "@/lib/config";
 import { renderDocumentsForPrompt } from "./documents";
 import { buildMemoryContext } from "./memory";
-import { countPendingMessages, takePendingMessages } from "./messages";
+import { takePendingMessages } from "./messages";
 import { addTokens, logStep, updateTask } from "./events";
 
 export interface TurnState {
@@ -28,16 +28,34 @@ export interface TurnState {
 
 const MAX_TURNS = 25;
 
-const SYSTEM_PROMPT = `You are an autonomous task-completing agent running in a sandbox.
-You have tools to search the web, fetch pages, run Python or JavaScript code, and use a shared workspace memory.
-Work step by step. Call one tool at a time. When you have enough information to
-answer, or if the task is impossible, call the \`finish\` tool with success=true/false
-and your answer. Be concise in your reasoning. Do not call finish until you have
-actually gathered the information needed.
+/** Older tool output is shortened when a conversation continues, because the
+ * full text is already in the task's activity log. Everything is resent to the
+ * model on every step, so this is the difference between a follow-up costing a
+ * few hundred prompt tokens and a few thousand. */
+const KEEP_RECENT_TOOL_RESULTS = 2;
+const TOOL_STUB_CHARS = 400;
 
-The person may send additional messages during the task. Treat each one as a
-further instruction for the same job: adjust your plan and continue. If a message
-changes the goal materially, follow the message.`;
+const SYSTEM_PROMPT = `You are an autonomous agent in a sandbox. Tools: web search, page fetch, Python, JavaScript, and a shared workspace memory.
+Work step by step, one tool call at a time. When you have what you need (or the task is impossible), call \`finish\` with success and your answer. Keep reasoning brief and never finish before gathering what the task needs.
+Messages from the person may arrive mid-task; treat each as a further instruction for the same job.`;
+
+/** Replaces all but the newest few tool results with a pointer to the log. */
+function compactHistory(messages: ChatMessage[]): ChatMessage[] {
+  const out = messages.map((message) => ({ ...message }));
+  let kept = 0;
+  for (let i = out.length - 1; i >= 0; i--) {
+    const message = out[i];
+    if (message.role !== "tool" || !message.content) continue;
+    if (kept < KEEP_RECENT_TOOL_RESULTS) {
+      kept++;
+      continue;
+    }
+    if (message.content.length > TOOL_STUB_CHARS) {
+      message.content = `${message.content.slice(0, 200)}… [earlier tool output shortened; full text is in the task activity log]`;
+    }
+  }
+  return out;
+}
 
 /** A date in the system prompt keeps "latest"-style answers honest - without
  * it the model has no idea what day it is and will invent dates. */
@@ -68,14 +86,14 @@ export async function runTask(
   let turnNumber = 1;
 
   if (turn) {
-    messages = turn.messages;
+    messages = compactHistory(turn.messages);
+    persistConversation(taskId, messages);
     step = turn.fromStep + 1;
-    // A follow-up turn normally *has* the new message pending, and that is
-    // logged on the first step - logging "continuing" as well duplicates it.
+    // Only a restart needs a marker of its own. A follow-up already shows up in
+    // the activity log as the person's message, and a second "continuing" line
+    // next to it just reads like the run happened twice.
     if (turn.reason === "resume") {
       logStep(taskId, turn.fromStep, "system", `Resumed after a restart (${messages.length} messages carried over).`);
-    } else if (countPendingMessages(taskId) === 0) {
-      logStep(taskId, turn.fromStep, "system", `Continuing the conversation (${messages.length} messages carried over).`);
     }
   } else {
     messages = [
@@ -94,7 +112,7 @@ export async function runTask(
     }
 
     // Prior work from this workspace, if anything is relevant.
-    const memory = buildMemoryContext(taskId, goal);
+    const memory = await buildMemoryContext(taskId, goal);
     if (memory) {
       messages[0].content += memory.block;
       updateTask(taskId, { memory_refs_json: JSON.stringify(memory.refs) });
@@ -109,7 +127,9 @@ export async function runTask(
   while (turnNumber <= MAX_TURNS) {
     turnNumber++;
     const ceiling = step + maxSteps;
+    const turnStartStep = step;
     let ended = false;
+    let emptyRetries = 0;
 
     for (; step < ceiling; step++) {
       if (isCancelled(taskId)) {
@@ -127,14 +147,18 @@ export async function runTask(
       if (incoming.length > 0) {
         for (const message of incoming) messages.push({ role: "user", content: message.content });
         persistConversation(taskId, messages);
-        logStep(
-          taskId,
-          step,
-          "system",
-          `${incoming.length} new message${incoming.length > 1 ? "s" : ""} from you — folding ${
-            incoming.length > 1 ? "them" : "it"
-          } into the plan.`
-        );
+        // On the first step of a turn the message itself is already in the
+        // activity log; only steering that lands mid-run needs its own note.
+        if (step > turnStartStep) {
+          logStep(
+            taskId,
+            step,
+            "system",
+            `${incoming.length} new message${incoming.length > 1 ? "s" : ""} from you — folding ${
+              incoming.length > 1 ? "them" : "it"
+            } into the plan.`
+          );
+        }
       }
 
       let response;
@@ -158,7 +182,22 @@ export async function runTask(
 
       const toolCalls = msg.tool_calls ?? [];
       if (toolCalls.length === 0) {
-        logStep(taskId, step, "final", reasoningText || "[empty response]");
+        // A provider sometimes answers with an empty message instead of an
+        // error. That is not an answer: retrying is cheap, while recording
+        // "[empty response]" would overwrite the task's real result.
+        if (!reasoningText.trim()) {
+          messages.pop();
+          persistConversation(taskId, messages);
+          if (emptyRetries < 2) {
+            emptyRetries++;
+            logStep(taskId, step, "system", "The model returned an empty reply; retrying.");
+            continue;
+          }
+          logStep(taskId, step, "error", "The model returned an empty reply three times. Stopping so the last good result is kept.");
+          updateTask(taskId, { status: "interrupted" });
+          return;
+        }
+        logStep(taskId, step, "final", reasoningText);
         updateTask(taskId, { status: "completed", result: reasoningText });
         ended = true;
         break;
@@ -213,12 +252,6 @@ export async function runTask(
       for (const message of pending) messages.push({ role: "user", content: message.content });
       persistConversation(taskId, messages);
       step++;
-      logStep(
-        taskId,
-        step,
-        "system",
-        "New message from you — continuing with it in the same conversation."
-      );
       updateTask(taskId, { status: "running" });
       continue;
     }

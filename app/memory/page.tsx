@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BookOpen, Pin, PinOff, Search, Trash2 } from "lucide-react";
 import { api, EpisodeItem, MemoryItem, MemoryResponse, timeAgo } from "@/lib/api";
+import { MarkdownText } from "@/components/MarkdownText";
 
 export default function MemoryPage() {
   const [data, setData] = useState<MemoryResponse | null>(null);
@@ -72,17 +73,39 @@ export default function MemoryPage() {
       {data && (
         <div className="mem-summary">
           <span>
-            <strong>{data.stats.facts}</strong> facts
+            <strong>{data.stats.facts}</strong> fact{data.stats.facts === 1 ? "" : "s"}
           </span>
           <span className="sep" />
           <span>
-            <strong>{data.stats.topics}</strong> topics
+            <strong>{data.stats.topics}</strong> topic{data.stats.topics === 1 ? "" : "s"}
           </span>
           <span className="sep" />
           <span>
             <strong>{data.stats.episodes}</strong> tasks learned from
           </span>
+          <span className="sep" />
+          <span>
+            <strong>{data.stats.links}</strong> relation{data.stats.links === 1 ? "" : "s"}
+          </span>
         </div>
+      )}
+
+      {data && (
+        <p className="mem-policy">
+          Nothing expires on a fixed schedule. Retention is scored from ACT-R base-level activation (decay d={" "}
+          {data.stats.model.decay}), graph centrality (weight {data.stats.model.wCentrality}) and observed utility,{
+          " "}
+          {data.stats.model.source === "fitted"
+            ? `fitted by logistic regression over ${data.stats.model.samples} facts this workspace has used (AUC ${data.stats.model.auc}).`
+            : `still on the priors until more facts have been used (${data.stats.model.samples} so far).`}{" "}
+          When the store passes its {data.stats.budgetChars.toLocaleString()}-character budget the lowest scores are
+          evicted and near-duplicates merge; using {data.stats.usedChars.toLocaleString()} characters now. Pinned facts
+          are never evicted.
+          <br />
+          Search fuses BM25, {data.stats.embeddings.ready ? `${data.stats.embeddings.model} (384-d)` : "no embeddings"}{" "}
+          and graph activation with reciprocal rank fusion. {data.stats.vectors.embedded} of {data.stats.facts} facts are
+          embedded.
+        </p>
       )}
 
       <div style={{ position: "relative", marginBottom: 22, maxWidth: 360 }}>
@@ -139,6 +162,14 @@ export default function MemoryPage() {
                         )}
                         <span className="sep" />
                         <span>used {memory.use_count}×</span>
+                        {memory.degree > 0 && (
+                          <>
+                            <span className="sep" />
+                            <span>
+                              linked to {memory.degree} {memory.degree === 1 ? "fact" : "facts"}
+                            </span>
+                          </>
+                        )}
                         <span className="sep" />
                         <span>{timeAgo(memory.updated_at)}</span>
                       </div>
@@ -183,9 +214,8 @@ export default function MemoryPage() {
                   <div className="mem-title">
                     <Link href={`/tasks/${episode.task_id}`}>{episode.goal}</Link>
                   </div>
-                  <div className="mem-content">
-                    {episode.summary.replace(/\s+/g, " ").slice(0, 220)}
-                    {episode.summary.length > 220 ? "…" : ""}
+                  <div className="mem-content md-clamp">
+                    <MarkdownText text={episode.summary} />
                   </div>
                   <div className="mem-meta">
                     <span className="pill" data-tone={episode.outcome === "completed" ? "completed" : "failed"}>
@@ -194,7 +224,9 @@ export default function MemoryPage() {
                     </span>
                     <span>{episode.tools || "no tools"}</span>
                     <span className="sep" />
-                    <span>{episode.step_count} steps</span>
+                    <span>
+                      {episode.step_count} {episode.step_count === 1 ? "step" : "steps"}
+                    </span>
                     <span className="sep" />
                     <span>{timeAgo(episode.updated_at)}</span>
                   </div>

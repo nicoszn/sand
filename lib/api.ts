@@ -57,6 +57,8 @@ export interface MemoryItem {
   created_at: number;
   updated_at: number;
   last_used_at: number | null;
+  /** Number of relation-graph edges this fact has. */
+  degree: number;
 }
 
 export interface EpisodeItem {
@@ -75,7 +77,27 @@ export interface EpisodeItem {
 export interface MemoryResponse {
   memories: MemoryItem[];
   episodes: EpisodeItem[];
-  stats: { facts: number; topics: number; episodes: number };
+  stats: {
+    facts: number;
+    topics: number;
+    episodes: number;
+    links: number;
+    usedChars: number;
+    budgetChars: number;
+    model: {
+      decay: number;
+      wActivation: number;
+      wCentrality: number;
+      wUtility: number;
+      auc: number;
+      samples: number;
+      positives: number;
+      source: "prior" | "fitted";
+      fittedAt: number;
+    };
+    vectors: { embedded: number; cached: number };
+    embeddings: { enabled: boolean; ready: boolean; model: string; dimensions: number; error: string | null };
+  };
 }
 
 async function j<T>(res: Response): Promise<T> {
