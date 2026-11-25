@@ -96,22 +96,82 @@ CREATE TABLE IF NOT EXISTS memories (
     use_count INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
-    last_used_at REAL
+    last_used_at REAL,
+    -- Bi-temporal belief state. valid_from/valid_to are world time: a fact
+    -- contradicted later keeps its row and gets a closed validity window, so
+    -- the earlier belief stays queryable; superseded_by walks the chain.
+    status TEXT NOT NULL DEFAULT 'active',   -- active | superseded | retracted | archived
+    valid_from REAL,
+    valid_to REAL,
+    superseded_by TEXT,
+    supersedes TEXT,
+    revision INTEGER NOT NULL DEFAULT 1,
+    community_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(topic_id);
 
--- Relation graph over facts: topic / shared-vocabulary / same-task edges.
--- Used for spreading-activation retrieval and centrality in the retention
--- score, and kept in SQLite so the graph is inspectable and survives restarts.
-CREATE TABLE IF NOT EXISTS memory_links (
-    from_id TEXT NOT NULL,
-    to_id TEXT NOT NULL,
-    kind TEXT NOT NULL,                       -- topic | term | task
-    weight REAL NOT NULL,
-    created_at REAL NOT NULL,
-    PRIMARY KEY (from_id, to_id)
+-- Immutable audit log of every change to a fact's text: the transaction-time
+-- half of bi-temporality, so history survives a contradiction, a retraction or
+-- a prune.
+CREATE TABLE IF NOT EXISTS memory_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    change TEXT NOT NULL,                     -- created | superseded | retracted | restored | archived
+    note TEXT,
+    recorded_at REAL NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_memory_links_to ON memory_links(to_id);
+CREATE INDEX IF NOT EXISTS idx_memory_revisions ON memory_revisions(memory_id, id);
+
+-- The typed, bi-temporal graph: every task, step, tool call, task episode and
+-- fact is a node; lineage and learned association are edges. valid_from /
+-- valid_to are world time, recorded_at / superseded_at are the system's belief
+-- time, and provenance records which mechanism asserted the edge.
+CREATE TABLE IF NOT EXISTS graph_edges (
+    id TEXT PRIMARY KEY,                       -- RELATION:from_type:from_id>to_type:to_id
+    from_type TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    relation TEXT NOT NULL,                    -- CONTAINS|PRODUCED|REFERENCES|DERIVED_FROM|TRIGGERED|SUPERSEDES|RELATES_TO
+    to_type TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    weight REAL NOT NULL,
+    provenance TEXT NOT NULL,
+    recorded_at REAL NOT NULL,
+    valid_from REAL NOT NULL,
+    valid_to REAL,
+    superseded_at REAL,
+    superseded_by TEXT,
+    last_reinforced_at REAL NOT NULL,
+    reinforcement INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_graph_from ON graph_edges(from_type, from_id);
+CREATE INDEX IF NOT EXISTS idx_graph_to ON graph_edges(to_type, to_id);
+CREATE INDEX IF NOT EXISTS idx_graph_relation ON graph_edges(relation);
+CREATE INDEX IF NOT EXISTS idx_graph_provenance ON graph_edges(provenance);
+
+-- Louvain communities over the fact graph: level 0 is the fine cluster a fact
+-- belongs to, level 1 the coarse archive summary retrieval starts from.
+CREATE TABLE IF NOT EXISTS memory_communities (
+    id TEXT PRIMARY KEY,
+    level INTEGER NOT NULL,
+    parent_id TEXT,
+    label TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    member_count INTEGER NOT NULL,
+    cohesion REAL NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_community_members (
+    community_id TEXT NOT NULL,
+    memory_id TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    weight REAL NOT NULL,
+    PRIMARY KEY (community_id, memory_id)
+);
+CREATE INDEX IF NOT EXISTS idx_community_members_memory ON memory_community_members(memory_id, level);
 
 -- Local sentence embeddings for semantic retrieval (384-d, MiniLM).
 CREATE TABLE IF NOT EXISTS memory_vectors (
@@ -183,6 +243,29 @@ function createConnection(): Database.Database {
   ensureColumn(db, "tasks", "resume_count", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "tasks", "memory_refs_json", "TEXT");
   ensureColumn(db, "tasks", "has_pending_input", "INTEGER NOT NULL DEFAULT 0");
+
+  // Bi-temporal belief columns. Existing facts become active, valid from their
+  // own creation time, with a revision history seeded from the row itself.
+  ensureColumn(db, "memories", "status", "TEXT NOT NULL DEFAULT 'active'");
+  ensureColumn(db, "memories", "valid_from", "REAL");
+  ensureColumn(db, "memories", "valid_to", "REAL");
+  ensureColumn(db, "memories", "superseded_by", "TEXT");
+  ensureColumn(db, "memories", "supersedes", "TEXT");
+  ensureColumn(db, "memories", "revision", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(db, "memories", "community_id", "TEXT");
+  db.prepare("UPDATE memories SET valid_from = created_at WHERE valid_from IS NULL").run();
+  // Created here, not in SCHEMA: an older `memories` table has no status column
+  // yet when the schema block runs, so the index would fail before the column
+  // is added.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status)");
+  db.exec(`INSERT INTO memory_revisions (memory_id, revision, title, content, change, note, recorded_at)
+           SELECT m.id, m.revision, m.title, m.content, 'created', 'migrated', m.created_at
+           FROM memories m
+           WHERE NOT EXISTS (SELECT 1 FROM memory_revisions r WHERE r.memory_id = m.id)`);
+
+  // `memory_links` was the old fact-only edge table. Its contents are fully
+  // derivable, so the typed graph replaces it rather than running two graphs.
+  db.exec("DROP TABLE IF EXISTS memory_links");
 
   // Settings the app no longer reads (the model and key moved to `config`).
   // Drop them so an upgraded database doesn't advertise dead config.

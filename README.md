@@ -106,7 +106,53 @@ successfully against it.
 5. The task ends in `completed`, `failed` (error, step cap, or exhausted
    quota), or `cancelled`.
 6. On server restart, `instrumentation.ts` marks any task stuck in `running`
-   as `failed` (it was interrupted) and re-enqueues anything left `queued`.
+   as `interrupted` (see above) and re-enqueues anything left `queued`.
+
+## Workspace memory
+
+Memory is one typed, bi-temporal graph (`lib/server/graph.ts`) rather than a
+set of tables joined ad hoc. Tasks, steps, tool calls, episodes, facts, topics
+and communities are nodes; edges carry a relation (`CONTAINS`, `PRODUCED`,
+`DERIVED_FROM`, `REFERENCES`, `TRIGGERED`, `SUPERSEDES`, `RELATES_TO`), a
+decaying weight, provenance, and **two** time axes:
+
+- **valid time** (`valid_from` / `valid_to`) - when the statement was true in
+  the world,
+- **transaction time** (`recorded_at` / `superseded_at`) - when this system
+  learned or stopped believing it.
+
+So a contradicted fact is never overwritten. `remember` detects a refinement of
+an existing claim (70-92% term overlap in the same topic), writes the new fact,
+closes the old one's validity window, links them with `SUPERSEDES`, and records
+both in `memory_revisions`. `recall` can be asked what the workspace believed
+`as_of` a past date, which is exactly the query an overwrite-in-place store
+cannot answer.
+
+Retrieval is four tiers over that one graph:
+
+| Tier | What | How |
+| --- | --- | --- |
+| 0 working | pinned facts | always injected |
+| 1 episodic | finished tasks | BM25 over goal/summary/tags |
+| 2 semantic | facts | BM25 + MiniLM cosine + bounded personalised PageRank, fused with reciprocal rank fusion, then MMR |
+| 3 archive | Louvain communities | score a few cluster summaries first, then their members; cold facts are compressed here instead of deleted |
+
+Louvain runs at two levels (`lib/server/communities.ts`), so themes stay coarse
+while clusters stay specific, and the graph is walked with two-hop personalised
+PageRank rather than a single expansion - multi-hop relevance is what flat
+top-k search misses.
+
+Deletion has three distinct meanings, and the UI never conflates them:
+
+- **retract** - stop believing it; the row, its validity window and its audit
+trail stay (`restore` reopens the window);
+- **archive** - automatic demotion when the fact budget is full; content is
+compressed, the history survives;
+- **purge** - hard delete of the fact, its vectors, revisions and edges.
+
+Deleting an episode retracts only the facts that no other task also supports:
+provenance is walked before anything is invalidated, so removing one chat never
+silently destroys a fact three other tasks independently asserted.
 
 ## The OpenRouter key pool
 

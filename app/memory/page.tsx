@@ -2,15 +2,33 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Pin, PinOff, Search, Trash2 } from "lucide-react";
-import { api, EpisodeItem, MemoryItem, MemoryResponse, timeAgo } from "@/lib/api";
+import { BookOpen, EyeOff, History, Layers, Pin, PinOff, RotateCcw, Search, Trash2 } from "lucide-react";
+import {
+  api,
+  CommunityItem,
+  EpisodeItem,
+  MemoryHistoryEntry,
+  MemoryItem,
+  MemoryResponse,
+  timeAgo,
+} from "@/lib/api";
 import { MarkdownText } from "@/components/MarkdownText";
+
+const STATUS_LABEL: Record<string, string> = {
+  active: "believed",
+  superseded: "superseded",
+  retracted: "retracted",
+  archived: "archived",
+};
 
 export default function MemoryPage() {
   const [data, setData] = useState<MemoryResponse | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [historyOf, setHistoryOf] = useState<string | null>(null);
+  const [chain, setChain] = useState<MemoryHistoryEntry[]>([]);
+  const [showShelf, setShowShelf] = useState(false);
 
   const load = (q: string) =>
     api
@@ -39,11 +57,24 @@ export default function MemoryPage() {
     }
   };
 
-  const remove = async (type: "memory" | "episode", id: string, label: string) => {
-    if (!confirm(`Forget ${label}? Future tasks won't see it.`)) return;
-    setBusy(id);
+  const retract = async (memory: MemoryItem) => {
+    if (!confirm(`Stop using "${memory.title}"? The belief is retracted, and its history is kept.`)) return;
+    setBusy(memory.id);
     try {
-      await api.deleteMemoryItem(type, id);
+      await api.retractMemory(memory.id);
+      await load(query);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to retract");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const purge = async (memory: MemoryItem) => {
+    if (!confirm(`Permanently delete "${memory.title}" and its revision history? This cannot be undone.`)) return;
+    setBusy(memory.id);
+    try {
+      await api.purgeMemory(memory.id);
       await load(query);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete");
@@ -52,9 +83,58 @@ export default function MemoryPage() {
     }
   };
 
+  const restore = async (memory: MemoryItem) => {
+    setBusy(memory.id);
+    try {
+      await api.restoreMemory(memory.id);
+      await load(query);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to restore");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const removeEpisode = async (episode: EpisodeItem) => {
+    if (
+      !confirm(
+        "Forget this task? Facts only this task supports are retracted; facts other tasks also assert keep their validity."
+      )
+    )
+      return;
+    setBusy(episode.task_id);
+    try {
+      await api.deleteEpisode(episode.task_id);
+      await load(query);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openHistory = async (id: string) => {
+    if (historyOf === id) {
+      setHistoryOf(null);
+      setChain([]);
+      return;
+    }
+    setBusy(id);
+    try {
+      const result = await api.memoryHistory(id);
+      setChain(result.chain);
+      setHistoryOf(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load history");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const groups = new Map<string, MemoryItem[]>();
+  const communityLabels = new Map<string, CommunityItem>((data?.communities ?? []).map((c) => [c.id, c]));
   for (const memory of data?.memories ?? []) {
-    const key = memory.topic_path ?? "uncategorised";
+    const key = memory.community_id ? communityLabels.get(memory.community_id)?.label ?? "theme" : memory.topic_path ?? "uncategorised";
     groups.set(key, [...(groups.get(key) ?? []), memory]);
   }
 
@@ -64,8 +144,8 @@ export default function MemoryPage() {
         <div>
           <h1 className="page-title">Memory</h1>
           <p className="page-sub">
-            What this workspace has learned. Every finished task is indexed here, and facts the agent deliberately
-            saved live under topics. New tasks are given the relevant parts automatically.
+            One typed, bi-temporal graph of everything this workspace knows: tasks, steps, tool calls, facts and the
+            themes they form. New tasks get the relevant parts automatically.
           </p>
         </div>
       </div>
@@ -73,11 +153,11 @@ export default function MemoryPage() {
       {data && (
         <div className="mem-summary">
           <span>
-            <strong>{data.stats.facts}</strong> fact{data.stats.facts === 1 ? "" : "s"}
+            <strong>{data.stats.facts}</strong> believed fact{data.stats.facts === 1 ? "" : "s"}
           </span>
           <span className="sep" />
           <span>
-            <strong>{data.stats.topics}</strong> topic{data.stats.topics === 1 ? "" : "s"}
+            <strong>{data.stats.communities.total}</strong> theme{data.stats.communities.total === 1 ? "" : "s"}
           </span>
           <span className="sep" />
           <span>
@@ -85,27 +165,58 @@ export default function MemoryPage() {
           </span>
           <span className="sep" />
           <span>
-            <strong>{data.stats.links}</strong> relation{data.stats.links === 1 ? "" : "s"}
+            <strong>{data.stats.graph.edges}</strong> graph edge{data.stats.graph.edges === 1 ? "" : "s"}
+          </span>
+          <span className="sep" />
+          <span>
+            <strong>{data.stats.archived + data.stats.superseded + data.stats.retracted}</strong> retired belief
+            {data.stats.archived + data.stats.superseded + data.stats.retracted === 1 ? "" : "s"}
           </span>
         </div>
       )}
 
       {data && (
         <p className="mem-policy">
-          Nothing expires on a fixed schedule. Retention is scored from ACT-R base-level activation (decay d={" "}
-          {data.stats.model.decay}), graph centrality (weight {data.stats.model.wCentrality}) and observed utility,{
-          " "}
+          Retrieval runs in tiers: pinned facts always, then earlier tasks (BM25), then facts fused from BM25,{" "}
+          {data.stats.embeddings.ready ? `${data.stats.embeddings.model}` : "no embeddings"} and a bounded personalised
+          PageRank walk over the graph, then the coarse theme summaries above them. Contradicted facts are never
+          overwritten &mdash; their validity window closes and the earlier belief stays queryable. Retention is scored
+          from ACT-R activation (d={data.stats.model.decay}), graph centrality (weight {data.stats.model.wCentrality}) and
+          utility,{" "}
           {data.stats.model.source === "fitted"
-            ? `fitted by logistic regression over ${data.stats.model.samples} facts this workspace has used (AUC ${data.stats.model.auc}).`
-            : `still on the priors until more facts have been used (${data.stats.model.samples} so far).`}{" "}
-          When the store passes its {data.stats.budgetChars.toLocaleString()}-character budget the lowest scores are
-          evicted and near-duplicates merge; using {data.stats.usedChars.toLocaleString()} characters now. Pinned facts
-          are never evicted.
-          <br />
-          Search fuses BM25, {data.stats.embeddings.ready ? `${data.stats.embeddings.model} (384-d)` : "no embeddings"}{" "}
-          and graph activation with reciprocal rank fusion. {data.stats.vectors.embedded} of {data.stats.facts} facts are
-          embedded.
+            ? `fitted over ${data.stats.model.samples} facts this workspace has used (AUC ${data.stats.model.auc}).`
+            : `on the priors until more facts are used (${data.stats.model.samples} so far).`}{" "}
+          Over budget, the weakest facts are demoted to the archive tier rather than deleted; {data.stats.usedChars.toLocaleString()}{" "}
+          of {data.stats.budgetChars.toLocaleString()} characters in use. Pinned facts are never demoted.
         </p>
+      )}
+
+      {data && data.themes.length > 0 && (
+        <div className="mem-group">
+          <div className="section-label" style={{ margin: "0 0 6px 2px" }}>
+            Themes (archive tier)
+          </div>
+          <div className="card">
+            {data.themes.map((theme) => (
+              <div key={theme.id} className="mem-row">
+                <div style={{ minWidth: 0 }}>
+                  <div className="mem-title">
+                    <Layers size={12} style={{ color: "var(--ink-3)" }} />
+                    {theme.label}
+                  </div>
+                  <div className="mem-content">{theme.summary}</div>
+                  <div className="mem-meta">
+                    <span>
+                      {theme.member_count} fact{theme.member_count === 1 ? "" : "s"}
+                    </span>
+                    <span className="sep" />
+                    <span>cohesion {theme.cohesion.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       <div style={{ position: "relative", marginBottom: 22, maxWidth: 360 }}>
@@ -138,61 +249,119 @@ export default function MemoryPage() {
 
       {data && data.memories.length > 0 && (
         <div style={{ marginBottom: 8 }}>
-          {[...groups.entries()].map(([topic, items]) => (
-            <div key={topic} className="mem-group">
+          {[...groups.entries()].map(([group, items]) => (
+            <div key={group} className="mem-group">
               <div className="section-label" style={{ margin: "0 0 6px 2px" }}>
-                {topic}
+                {group}
               </div>
               <div className="card">
                 {items.map((memory) => (
-                  <div key={memory.id} className="mem-row">
-                    <div style={{ minWidth: 0 }}>
-                      <div className="mem-title">
-                        {memory.pinned ? (
-                          <Pin size={12} style={{ color: "var(--accent-amber)" }} />
-                        ) : null}
-                        {memory.title}
+                  <div key={memory.id}>
+                    <div className="mem-row">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="mem-title">
+                          {memory.pinned ? <Pin size={12} style={{ color: "var(--accent-amber)" }} /> : null}
+                          {memory.title}
+                        </div>
+                        <div className="mem-content">{memory.content}</div>
+                        <div className="mem-meta">
+                          {memory.source_task_id ? (
+                            <Link href={`/tasks/${memory.source_task_id}`}>from task {memory.source_task_id}</Link>
+                          ) : (
+                            <span>added manually</span>
+                          )}
+                          <span className="sep" />
+                          <span>used {memory.use_count}×</span>
+                          {memory.degree > 0 && (
+                            <>
+                              <span className="sep" />
+                              <span>
+                                linked to {memory.degree} {memory.degree === 1 ? "fact" : "facts"}
+                              </span>
+                            </>
+                          )}
+                          <span className="sep" />
+                          <span>
+                            {memory.status === "active" ? "believed" : STATUS_LABEL[memory.status]} since{" "}
+                            {new Date(memory.valid_from * 1000).toLocaleDateString()}
+                          </span>
+                          <span className="sep" />
+                          <span>{timeAgo(memory.updated_at)}</span>
+                        </div>
                       </div>
-                      <div className="mem-content">{memory.content}</div>
-                      <div className="mem-meta">
-                        {memory.source_task_id ? (
-                          <Link href={`/tasks/${memory.source_task_id}`}>from task {memory.source_task_id}</Link>
-                        ) : (
-                          <span>added manually</span>
-                        )}
-                        <span className="sep" />
-                        <span>used {memory.use_count}×</span>
-                        {memory.degree > 0 && (
-                          <>
-                            <span className="sep" />
+                      <div className="mem-actions">
+                        <button
+                          className="btn btn-sm"
+                          disabled={busy === memory.id}
+                          onClick={() => togglePin(memory)}
+                          title={memory.pinned ? "Unpin" : "Pin so it outranks other facts"}
+                        >
+                          {memory.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                          {memory.pinned ? "Unpin" : "Pin"}
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          disabled={busy === memory.id}
+                          onClick={() => openHistory(memory.id)}
+                          title="Revision history and superseded versions"
+                        >
+                          <History size={13} />
+                          {memory.history > 1 ? memory.history : ""}
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          disabled={busy === memory.id}
+                          onClick={() => retract(memory)}
+                          title="Stop believing this fact, keeping its audit trail"
+                        >
+                          <EyeOff size={13} />
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          disabled={busy === memory.id}
+                          onClick={() => purge(memory)}
+                          title="Permanently delete this fact and its history"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {historyOf === memory.id && (
+                      <div style={{ padding: "4px 0 14px 12px" }}>
+                        <div className="section-label" style={{ margin: "0 0 6px" }}>
+                          Belief history
+                        </div>
+                        {chain.map((entry) => (
+                          <div key={entry.memory.id} className="mem-meta" style={{ display: "block", marginBottom: 8 }}>
+                            <strong>{entry.memory.title}</strong>{" "}
+                            <span className="pill" data-tone={entry.memory.status === "active" ? "completed" : "failed"}>
+                              <span className="pill-dot" />
+                              {STATUS_LABEL[entry.memory.status]}
+                            </span>{" "}
                             <span>
-                              linked to {memory.degree} {memory.degree === 1 ? "fact" : "facts"}
+                              {new Date(entry.memory.valid_from * 1000).toLocaleString()} →{" "}
+                              {entry.memory.valid_to
+                                ? new Date(entry.memory.valid_to * 1000).toLocaleString()
+                                : "open"}
                             </span>
-                          </>
-                        )}
-                        <span className="sep" />
-                        <span>{timeAgo(memory.updated_at)}</span>
+                            <div className="mem-content" style={{ marginTop: 2 }}>
+                              {entry.memory.content}
+                            </div>
+                            {entry.revisions.length > 1 && (
+                              <div style={{ marginTop: 2 }}>
+                                {entry.revisions.map((revision) => (
+                                  <div key={revision.id}>
+                                    {new Date(revision.recorded_at * 1000).toLocaleString()} · {revision.change}
+                                    {revision.note ? ` — ${revision.note}` : ""}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    </div>
-                    <div className="mem-actions">
-                      <button
-                        className="btn btn-sm"
-                        disabled={busy === memory.id}
-                        onClick={() => togglePin(memory)}
-                        title={memory.pinned ? "Unpin" : "Pin so it outranks other facts"}
-                      >
-                        {memory.pinned ? <PinOff size={13} /> : <Pin size={13} />}
-                        {memory.pinned ? "Unpin" : "Pin"}
-                      </button>
-                      <button
-                        className="btn btn-sm btn-danger"
-                        disabled={busy === memory.id}
-                        onClick={() => remove("memory", memory.id, `"${memory.title}"`)}
-                        title="Delete this fact"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -235,7 +404,7 @@ export default function MemoryPage() {
                   <button
                     className="btn btn-sm btn-danger"
                     disabled={busy === episode.task_id}
-                    onClick={() => remove("episode", episode.task_id, "this task from memory")}
+                    onClick={() => removeEpisode(episode)}
                     title="Stop future tasks from learning from it"
                   >
                     <Trash2 size={13} />
@@ -244,6 +413,71 @@ export default function MemoryPage() {
               </div>
             ))}
           </div>
+        </>
+      )}
+
+      {data && data.inactive.length > 0 && (
+        <>
+          <div className="section-head">
+            <button className="btn btn-sm" onClick={() => setShowShelf((value) => !value)}>
+              {showShelf ? "Hide" : "Show"} retired beliefs ({data.inactive.length})
+            </button>
+            <span className="section-meta">superseded, retracted and archived</span>
+          </div>
+          {showShelf && (
+            <div className="card">
+              {data.inactive.map((memory) => (
+                <div key={memory.id} className="mem-row">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="mem-title">
+                      {memory.title}
+                      <span className="pill" data-tone="failed">
+                        <span className="pill-dot" />
+                        {STATUS_LABEL[memory.status]}
+                      </span>
+                    </div>
+                    <div className="mem-content md-clamp">{memory.content}</div>
+                    <div className="mem-meta">
+                      <span>
+                        {new Date(memory.valid_from * 1000).toLocaleDateString()} →{" "}
+                        {memory.valid_to ? new Date(memory.valid_to * 1000).toLocaleDateString() : "open"}
+                      </span>
+                      <span className="sep" />
+                      <span>{memory.history} revisions</span>
+                    </div>
+                  </div>
+                  <div className="mem-actions">
+                    <button
+                      className="btn btn-sm"
+                      disabled={busy === memory.id}
+                      onClick={() => openHistory(memory.id)}
+                      title="Revision history"
+                    >
+                      <History size={13} />
+                    </button>
+                    {memory.status === "retracted" && (
+                      <button
+                        className="btn btn-sm"
+                        disabled={busy === memory.id}
+                        onClick={() => restore(memory)}
+                        title="Believe this fact again"
+                      >
+                        <RotateCcw size={13} />
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-sm btn-danger"
+                      disabled={busy === memory.id}
+                      onClick={() => purge(memory)}
+                      title="Permanently delete"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </>

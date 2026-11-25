@@ -14,11 +14,13 @@ What each part does, in one sentence.
 
 ## Memory
 
-- `lib/server/memory.ts` — the memory facade: hybrid retrieval, retention-aware pruning, context building and the public memory API.
-- `lib/server/memoryIndex.ts` — MiniSearch BM25 index with fuzzy and prefix matching over facts and episodes.
+- `lib/server/memory.ts` — tiered retrieval, bi-temporal beliefs (supersede instead of overwrite), context building, retention/pruning and the three deletion semantics.
+- `lib/server/graph.ts` — the typed bi-temporal graph: nodes, seven relation types, decaying and reinforced edges, bounded personalised PageRank, provenance walks.
+- `lib/server/communities.ts` — Louvain community detection over the fact graph, two-level summaries, coarse-to-fine theme search.
+- `lib/server/memoryIndex.ts` — MiniSearch BM25 index with fuzzy and prefix matching over believed facts and episodes.
 - `lib/server/embeddings.ts` — local MiniLM sentence embeddings via Transformers.js, with graceful lexical fallback.
 - `lib/server/vectors.ts` — stores fact embeddings as SQLite BLOBs and ranks them by cosine similarity.
-- `lib/server/memoryGraph.ts` — the relation graph: derived and co-use edges, PageRank centrality and spreading activation.
+- `lib/server/memoryGraph.ts` — derived fact relations and learned co-use edges written into the graph, multi-hop relevance flow, centrality and related-fact views.
 - `lib/server/memoryModel.ts` — fits the ACT-R decay exponent and retention weights from observed usage.
 - `lib/server/text.ts` — shared tokenisation, stopwords and Jaccard similarity.
 - `lib/server/messages.ts` — the conversation around a task, with exactly-once consumption of unseen messages.

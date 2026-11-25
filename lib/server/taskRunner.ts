@@ -17,8 +17,9 @@
 import { getDb, now } from "./db";
 import { runTask, TurnState } from "./agent";
 import { ChatMessage } from "./openrouterClient";
-import { backfillEpisodes, pruneMemory, recordEpisode } from "./memory";
+import { backfillEpisodes, memoryEdgeKeys, pruneMemory, recordEpisode } from "./memory";
 import { strengthenCoUse } from "./memoryGraph";
+import { reinforceEdges } from "./graph";
 import { backfillVectors } from "./vectors";
 import {
   MAX_MESSAGE_CHARS,
@@ -103,6 +104,9 @@ async function processQueue() {
                 .filter((ref) => ref.type === "memory")
                 .map((ref) => ref.id);
               strengthenCoUse(ids);
+              // Reinforce exactly the associations the task walked through, so
+              // the graph's learned weights reflect what actually helped.
+              reinforceEdges(memoryEdgeKeys(ids));
             }
           }
           // Cheap (few indexed deletes) and keeps the store bounded without a

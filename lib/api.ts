@@ -38,11 +38,15 @@ export interface TaskMessage {
 }
 
 export interface MemoryRef {
-  type: "task" | "memory";
+  type: "task" | "memory" | "community";
   id: string;
   title: string;
   score: number;
+  /** How the fact was retrieved: matched words, embedding, graph walk, theme. */
+  via?: "lexical" | "semantic" | "graph" | "community" | "pinned" | "working";
 }
+
+export type MemoryStatus = "active" | "superseded" | "retracted" | "archived";
 
 export interface MemoryItem {
   id: string;
@@ -59,6 +63,44 @@ export interface MemoryItem {
   last_used_at: number | null;
   /** Number of relation-graph edges this fact has. */
   degree: number;
+  /** Bi-temporal belief state. */
+  status: MemoryStatus;
+  valid_from: number;
+  valid_to: number | null;
+  superseded_by: string | null;
+  supersedes: string | null;
+  revision: number;
+  community_id: string | null;
+  /** Rows in the immutable revision log for this fact. */
+  history: number;
+}
+
+export interface CommunityItem {
+  id: string;
+  level: number;
+  parent_id: string | null;
+  label: string;
+  summary: string;
+  member_count: number;
+  cohesion: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MemoryRevisionItem {
+  id: number;
+  memory_id: string;
+  revision: number;
+  title: string;
+  content: string;
+  change: string;
+  note: string | null;
+  recorded_at: number;
+}
+
+export interface MemoryHistoryEntry {
+  memory: MemoryItem;
+  revisions: MemoryRevisionItem[];
 }
 
 export interface EpisodeItem {
@@ -77,13 +119,25 @@ export interface EpisodeItem {
 export interface MemoryResponse {
   memories: MemoryItem[];
   episodes: EpisodeItem[];
+  /** Level-0 clusters (fine) and level-1 themes (coarse). */
+  communities: CommunityItem[];
+  themes: CommunityItem[];
+  /** Superseded / retracted / archived beliefs, kept for the audit trail. */
+  inactive: MemoryItem[];
   stats: {
     facts: number;
+    archived: number;
+    superseded: number;
+    retracted: number;
     topics: number;
     episodes: number;
     links: number;
     usedChars: number;
     budgetChars: number;
+    archiveBudgetChars: number;
+    graph: { nodes: number; edges: number; invalidated: number; relations: { relation: string; n: number }[] };
+    communities: { total: number; levels: number };
+    tiers: { working: number; episodic: number; semantic: number; archive: number };
     model: {
       decay: number;
       wActivation: number;
@@ -161,6 +215,35 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, pinned }),
     }).then((r) => j<{ ok: true }>(r)),
+
+  restoreMemory: (id: string) =>
+    fetch("/api/memory", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action: "restore" }),
+    }).then((r) => j<{ ok: boolean }>(r)),
+
+  memoryHistory: (id: string) =>
+    fetch(`/api/memory?history=${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) =>
+      j<{ chain: MemoryHistoryEntry[] }>(r)
+    ),
+
+  /** Soft delete: the belief stops being used, the audit trail stays. */
+  retractMemory: (id: string) =>
+    fetch(`/api/memory?type=memory&id=${encodeURIComponent(id)}&mode=retract`, { method: "DELETE" }).then((r) =>
+      j<{ ok: boolean }>(r)
+    ),
+
+  /** Hard delete: fact, vectors and revision history gone for good. */
+  purgeMemory: (id: string) =>
+    fetch(`/api/memory?type=memory&id=${encodeURIComponent(id)}&mode=purge`, { method: "DELETE" }).then((r) =>
+      j<{ ok: boolean }>(r)
+    ),
+
+  deleteEpisode: (id: string) =>
+    fetch(`/api/memory?type=episode&id=${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) =>
+      j<{ ok: true; retracted: string[]; kept: string[] }>(r)
+    ),
 
   deleteMemoryItem: (type: "memory" | "episode", id: string) =>
     fetch(`/api/memory?type=${type}&id=${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) =>

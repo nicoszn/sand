@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import * as cheerio from "cheerio";
 import { rememberFact, searchMemory, searchEpisodes, readTaskDigest, relativeAge } from "./memory";
+import { searchCommunities } from "./communities";
 
 /** Tool output is resent to the model on every later step, so its size is a
  * per-step cost, not a one-off. 4000 chars is enough for search snippets and
@@ -136,17 +137,45 @@ async function runInSandbox(
 
 /* ------------------------------------------------------------- memory tools */
 
-async function recall(query: string): Promise<string> {
-  const facts = await searchMemory(query, 5);
-  const episodes = searchEpisodes(query, 3);
-  if (facts.length === 0 && episodes.length === 0) {
-    return "Nothing relevant is stored in workspace memory yet. Work it out from scratch (and use `remember` if the answer is worth keeping).";
+/** Parses the optional `as_of` argument (ISO date or unix seconds). */
+function parseAsOf(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const asDate = Date.parse(value);
+  if (Number.isFinite(asDate)) return asDate / 1000;
+  const asNumber = Number(value);
+  return Number.isFinite(asNumber) ? asNumber : undefined;
+}
+
+async function recall(query: string, asOf?: number): Promise<string> {
+  const facts = await searchMemory(query, 5, { asOf });
+  // Episodes are only meaningful for "now": a task summary is not a belief that
+  // can be asked about at a past instant.
+  const episodes = asOf ? [] : searchEpisodes(query, 3);
+  const themes = asOf ? [] : searchCommunities(query, 2);
+  if (facts.length === 0 && episodes.length === 0 && themes.length === 0) {
+    return asOf
+      ? `Nothing was recorded about that as of ${new Date(asOf * 1000).toISOString().slice(0, 10)}. Try \`recall\` without as_of, or work it out from scratch.`
+      : "Nothing relevant is stored in workspace memory yet. Work it out from scratch (and use `remember` if the answer is worth keeping).";
   }
 
   const parts: string[] = [];
+  if (themes.length > 0) {
+    parts.push(
+      `Themes in this workspace:\n${themes
+        .map((theme) => `- ${theme.label} (${theme.member_count} facts): ${theme.summary}`)
+        .join("\n")}`
+    );
+  }
   if (facts.length > 0) {
     parts.push(
-      `Saved facts:\n${facts.map((fact) => `- ${fact.title}: ${fact.content}`).join("\n")}`
+      `Saved facts${asOf ? ` as believed on ${new Date(asOf * 1000).toISOString().slice(0, 10)}` : ""}:\n${facts
+        .map((fact) => {
+          const status = fact.status === "active" ? "" : ` [${fact.status}]`;
+          const since = new Date(fact.valid_from * 1000).toISOString().slice(0, 10);
+          return `- ${fact.title}${status} (valid from ${since}): ${fact.content}`;
+        })
+        .join("\n")}`
     );
   }
   if (episodes.length > 0) {
@@ -244,10 +273,17 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "recall",
       description:
-        "Search workspace memory: durable facts saved by earlier tasks and earlier tasks themselves. Use this before repeating research.",
+        "Search workspace memory: durable facts saved by earlier tasks, the themes they fall into, and earlier tasks themselves. Use this before repeating research. Pass as_of to ask what the workspace believed at an earlier date.",
       parameters: {
         type: "object",
-        properties: { query: { type: "string", description: "What you are looking for" } },
+        properties: {
+          query: { type: "string", description: "What you are looking for" },
+          as_of: {
+            type: "string",
+            description:
+              "Optional past date (YYYY-MM-DD) to see what was believed then, including beliefs since superseded or retracted.",
+          },
+        },
         required: ["query"],
       },
     },
@@ -317,7 +353,7 @@ export const TOOL_FUNCTIONS: Record<
     runPython(String(args.code), typeof args.timeout_seconds === "number" ? args.timeout_seconds : 20),
   run_node: async (args) =>
     runNode(String(args.code), typeof args.timeout_seconds === "number" ? args.timeout_seconds : 20),
-  recall: async (args) => recall(String(args.query ?? "")),
+  recall: async (args) => recall(String(args.query ?? ""), parseAsOf(args.as_of)),
   remember: async (args, context) => remember(context, args),
   read_task: async (args) => readTask(String(args.task_id ?? "")),
 };

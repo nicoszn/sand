@@ -72,7 +72,10 @@ function build() {
   );
 
   factRows.clear();
-  const facts = db.prepare("SELECT * FROM memories").all() as MemoryRow[];
+  // Only currently-believed facts are searchable: a superseded or retracted
+  // belief stays in the graph and in the revision log, but must not be served
+  // as though it were still true.
+  const facts = db.prepare("SELECT * FROM memories WHERE status = 'active'").all() as MemoryRow[];
   const factDocs: FactDoc[] = facts.map((row) => {
     factRows.set(row.id, row);
     return {
