@@ -1,8 +1,24 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { Boxes, Sparkles } from "lucide-react";
+import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import { NavLink } from "@/components/NavLink";
+
+const sans = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-sans",
+});
+
+/** Headlines are set in a display serif; the UI text stays sans so the two
+ * never compete for the same role. */
+const serif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+  variable: "--font-serif",
+});
 
 export const metadata: Metadata = {
   title: "agent sandbox",
@@ -16,7 +32,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${sans.variable} ${serif.variable}`}>
       <body>
         <div className="app">
           <aside className="rail">

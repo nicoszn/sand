@@ -35,7 +35,8 @@
   --shadow: 0 1px 1px rgba(35, 30, 20, 0.04), 0 10px 26px -14px rgba(35, 30, 20, 0.22);
   --shadow-lift: 0 1px 1px rgba(35, 30, 20, 0.05), 0 18px 40px -20px rgba(35, 30, 20, 0.3);
 
-  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --sans: var(--font-sans), ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --serif: var(--font-serif), "Iowan Old Style", Georgia, "Times New Roman", serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
@@ -274,9 +275,11 @@ input[type="checkbox"] {
   line-height: 1.1;
 }
 .brand-word {
-  font-size: 14.5px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.15;
 }
 .brand-tag {
   font-size: 10.5px;
@@ -513,18 +516,19 @@ input[type="checkbox"] {
 }
 .page-title {
   margin: 0;
-  font-size: 30px;
-  line-height: 1.15;
-  font-weight: 650;
-  letter-spacing: -0.038em;
+  font-family: var(--serif);
+  font-size: 40px;
+  line-height: 1.05;
+  font-weight: 400;
+  letter-spacing: -0.012em;
   color: var(--ink);
 }
 .page-sub {
-  margin: 8px 0 0;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--ink-3);
-  max-width: 62ch;
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  max-width: 60ch;
 }
 .back-link {
   display: inline-flex;
@@ -564,10 +568,17 @@ input[type="checkbox"] {
   border-radius: var(--radius) var(--radius) 0 0;
 }
 .card-title {
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-size: 13.5px;
+  font-weight: 620;
+  letter-spacing: -0.008em;
   color: var(--ink);
+}
+.card-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-3);
 }
 .section-label {
   display: inline-flex;
@@ -1180,10 +1191,11 @@ input[type="checkbox"] {
 }
 .hero-goal {
   margin: 0;
-  font-size: 19px;
-  font-weight: 620;
-  line-height: 1.45;
-  letter-spacing: -0.025em;
+  font-family: var(--serif);
+  font-size: 25px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
   color: var(--ink);
   flex: 1 1 260px;
   min-width: 0;
@@ -1903,6 +1915,186 @@ input[type="checkbox"] {
   margin: 1.2em 0;
 }
 
+/* ------------------------------------------------------------- settings */
+
+.settings-card {
+  overflow: hidden;
+}
+.figure-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.figure {
+  min-width: 0;
+  padding: 22px 20px 20px;
+  border-left: 1px solid var(--line);
+}
+.figure:first-child {
+  border-left: none;
+}
+.figure dt {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.figure dd {
+  margin: 10px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.figure p {
+  margin: 7px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+.settings-form {
+  padding: 20px;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 18px;
+}
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.settings-actions .saved {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--accent-green);
+}
+
+/* --------------------------------------------------------------- compose */
+
+.compose {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.prompt-card {
+  padding: 22px 22px 18px;
+}
+.prompt-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+.prompt-label .field-label {
+  margin-bottom: 0;
+}
+.prompt-label span {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.prompt-input {
+  font-size: 16px;
+  line-height: 1.65;
+  padding: 14px 15px;
+  min-height: 168px;
+  border-radius: 11px;
+  background: #fff;
+}
+.prompt-input::placeholder {
+  color: #b3ac9d;
+}
+.suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.suggest {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.suggest:hover {
+  background: #fff;
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.suggest svg {
+  flex-shrink: 0;
+  color: var(--ink-3);
+}
+.suggest:hover svg {
+  color: var(--accent);
+}
+.prompt-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.prompt-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.prompt-foot .hint {
+  margin: 0;
+  max-width: 44ch;
+}
+.compose-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 0 2px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+.compose-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent-amber);
+}
+.compose-note a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* -------------------------------------------------------------- responsive */
 
 @media (max-width: 1180px) {
@@ -1936,7 +2128,19 @@ input[type="checkbox"] {
     padding: 26px 18px 88px;
   }
   .page-title {
-    font-size: 25px;
+    font-size: 32px;
+  }
+  .figure-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .figure:nth-child(3) {
+    border-left: none;
+  }
+  .figure:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
   .stat-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
