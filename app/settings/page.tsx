@@ -46,6 +46,7 @@ export default function SettingsPage() {
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <div className="page-head">
         <div>
+          <span className="page-kicker">Workspace</span>
           <h1 className="page-title">Settings</h1>
           <p className="page-sub">
             The limits every task runs under. Stored locally, applied to the next task.

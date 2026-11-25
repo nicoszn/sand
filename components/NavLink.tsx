@@ -17,19 +17,34 @@ export function NavLink({
   href,
   label,
   icon,
+  variant = "rail",
 }: {
   href: string;
   label: string;
   icon?: keyof typeof ICONS;
+  variant?: "rail" | "top";
 }) {
   const pathname = usePathname();
   const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
   const Icon = icon ? ICONS[icon] : null;
 
+  if (variant === "top") {
+    return (
+      <Link href={href} className={`nav-link${isActive ? " active" : ""}`} aria-current={isActive ? "page" : undefined}>
+        {Icon && <Icon size={14} strokeWidth={2} />}
+        {label}
+      </Link>
+    );
+  }
+
   return (
-    <Link href={href} className={`nav-link${isActive ? " active" : ""}`}>
-      {Icon && <Icon size={14} strokeWidth={2} />}
-      {label}
+    <Link href={href} className={`rail-link${isActive ? " active" : ""}`} aria-current={isActive ? "page" : undefined}>
+      {Icon && (
+        <span className="rail-icon">
+          <Icon size={14} strokeWidth={2} />
+        </span>
+      )}
+      <span className="rail-label">{label}</span>
     </Link>
   );
 }

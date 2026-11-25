@@ -185,7 +185,7 @@ export default function TaskDetailPage() {
         <ArrowLeft size={14} /> All tasks
       </Link>
 
-      <div className="card hero">
+      <div className="card hero" data-status={task.status}>
         <div className="hero-top">
           <h1 className="hero-goal">{task.goal}</h1>
           <div className="hero-actions">

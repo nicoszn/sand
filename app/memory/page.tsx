@@ -142,6 +142,7 @@ export default function MemoryPage() {
     <>
       <div className="page-head">
         <div>
+          <span className="page-kicker">Knowledge</span>
           <h1 className="page-title">Memory</h1>
           <p className="page-sub">
             One typed, bi-temporal graph of everything this workspace knows: tasks, steps, tool calls, facts and the
@@ -151,27 +152,34 @@ export default function MemoryPage() {
       </div>
 
       {data && (
-        <div className="mem-summary">
-          <span>
-            <strong>{data.stats.facts}</strong> believed fact{data.stats.facts === 1 ? "" : "s"}
-          </span>
-          <span className="sep" />
-          <span>
-            <strong>{data.stats.communities.total}</strong> theme{data.stats.communities.total === 1 ? "" : "s"}
-          </span>
-          <span className="sep" />
-          <span>
-            <strong>{data.stats.episodes}</strong> tasks learned from
-          </span>
-          <span className="sep" />
-          <span>
-            <strong>{data.stats.graph.edges}</strong> graph edge{data.stats.graph.edges === 1 ? "" : "s"}
-          </span>
-          <span className="sep" />
-          <span>
-            <strong>{data.stats.archived + data.stats.superseded + data.stats.retracted}</strong> retired belief
-            {data.stats.archived + data.stats.superseded + data.stats.retracted === 1 ? "" : "s"}
-          </span>
+        <div className="mem-stats">
+          <div className="mem-stat" data-tone="accent">
+            <span className="mem-stat-label">Believed facts</span>
+            <span className="mem-stat-value">{data.stats.facts}</span>
+            <span className="mem-stat-note">active validity windows</span>
+          </div>
+          <div className="mem-stat" data-tone="plum">
+            <span className="mem-stat-label">Themes</span>
+            <span className="mem-stat-value">{data.stats.communities.total}</span>
+            <span className="mem-stat-note">detected communities</span>
+          </div>
+          <div className="mem-stat">
+            <span className="mem-stat-label">Graph edges</span>
+            <span className="mem-stat-value">{data.stats.graph.edges}</span>
+            <span className="mem-stat-note">typed, weighted links</span>
+          </div>
+          <div className="mem-stat">
+            <span className="mem-stat-label">Learned from</span>
+            <span className="mem-stat-value">{data.stats.episodes}</span>
+            <span className="mem-stat-note">indexed tasks</span>
+          </div>
+          <div className="mem-stat" data-tone="muted">
+            <span className="mem-stat-label">Retired beliefs</span>
+            <span className="mem-stat-value">
+              {data.stats.archived + data.stats.superseded + data.stats.retracted}
+            </span>
+            <span className="mem-stat-note">audit trail kept</span>
+          </div>
         </div>
       )}
 
@@ -196,22 +204,25 @@ export default function MemoryPage() {
           <div className="section-label" style={{ margin: "0 0 6px 2px" }}>
             Themes (archive tier)
           </div>
-          <div className="card">
+          <div className="theme-grid">
             {data.themes.map((theme) => (
-              <div key={theme.id} className="mem-row">
-                <div style={{ minWidth: 0 }}>
-                  <div className="mem-title">
-                    <Layers size={12} style={{ color: "var(--ink-3)" }} />
-                    {theme.label}
-                  </div>
-                  <div className="mem-content">{theme.summary}</div>
-                  <div className="mem-meta">
-                    <span>
-                      {theme.member_count} fact{theme.member_count === 1 ? "" : "s"}
-                    </span>
-                    <span className="sep" />
-                    <span>cohesion {theme.cohesion.toFixed(2)}</span>
-                  </div>
+              <div key={theme.id} className="theme-card">
+                <div className="theme-title">
+                  <Layers size={12} />
+                  {theme.label}
+                </div>
+                <div className="theme-summary">{theme.summary}</div>
+                <div className="theme-foot">
+                  <span>
+                    {theme.member_count} fact{theme.member_count === 1 ? "" : "s"}
+                  </span>
+                  <span className="meter" title={`cohesion ${theme.cohesion.toFixed(2)}`}>
+                    <span
+                      className="meter-fill"
+                      style={{ width: `${Math.round(Math.min(1, Math.max(0, theme.cohesion)) * 100)}%` }}
+                    />
+                  </span>
+                  <span>{theme.cohesion.toFixed(2)}</span>
                 </div>
               </div>
             ))}
